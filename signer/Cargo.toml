@@ -1,0 +1,13 @@
+[package]
+name = "signer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+

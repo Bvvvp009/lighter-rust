@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "poseidon-hash",
+    "crypto", 
+    "signer",
+    "api-client"
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+thiserror = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
+

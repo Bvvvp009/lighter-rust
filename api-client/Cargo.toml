@@ -1,0 +1,54 @@
+[package]
+name = "api-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+signer = { path = "../signer" }
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+base64 = "0.21"
+dotenv = "0.15"
+
+[[example]]
+name = "simple_test"
+path = "examples/simple_test.rs"
+
+[[example]]
+name = "verify_fixes"
+path = "examples/verify_fixes.rs"
+
+[[example]]
+name = "create_market_order"
+path = "examples/create_market_order.rs"
+
+[[example]]
+name = "create_limit_order"
+path = "examples/create_limit_order.rs"
+
+[[example]]
+name = "cancel_order"
+path = "examples/cancel_order.rs"
+
+[[example]]
+name = "cancel_all_orders"
+path = "examples/cancel_all_orders.rs"
+
+[[example]]
+name = "create_auth_token"
+path = "examples/create_auth_token.rs"
+
+[[example]]
+name = "setup_api_key"
+path = "examples/setup_api_key.rs"
+
+[[example]]
+name = "benchmark_real_transactions"
+path = "examples/benchmark_real_transactions.rs"
+

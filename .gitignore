@@ -1,0 +1,70 @@
+# Rust build artifacts
+target/
+/target/
+**/*.rs.bk
+*.pdb
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+.env.test
+.env.local
+.env.production
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Node.js (if any JavaScript tooling is used)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Debug and test artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+*.trace
+trace_output.txt
+
+
+ legacy/
+ legacy/*
+
+# Documentation build outputs (if using mdbook or similar)
+/book/
+
+# Coverage reports
+tarpaulin-report.html
+coverage/
+*.lcov
+
+# Backup files
+*.bak
+*.backup
+*~

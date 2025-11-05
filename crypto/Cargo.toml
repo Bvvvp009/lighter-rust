@@ -1,0 +1,29 @@
+[package]
+name = "goldilocks-crypto"
+version = "0.1.1"
+edition = "2021"
+authors = ["bvvvp009"]
+license = "MIT OR Apache-2.0"
+description = "Rust port of ECgFp5 elliptic curve and Schnorr signatures over Goldilocks field, ported from lighter-go (Lighter Protocol)"
+repository = "https://github.com/bvvvp009/lighter-rust"
+keywords = ["schnorr", "elliptic-curve", "goldilocks", "signature", "cryptography"]
+categories = ["cryptography", "algorithms"]
+readme = "README.md"
+
+[dependencies]
+poseidon-hash = { path = "../poseidon-hash", version = "0.1.0" }
+# Optional serde support for serialization
+serde = { version = "1.0", features = ["derive"], optional = true }
+hex = "0.4"
+thiserror = "1.0"
+rand = "0.8"
+num-bigint = "0.4"
+
+[features]
+default = []
+serde = ["dep:serde", "poseidon-hash/serde"]
+
+[[example]]
+name = "test_exports"
+path = "examples/test_exports.rs"
+

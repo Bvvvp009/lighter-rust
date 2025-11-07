@@ -68,3 +68,7 @@ coverage/
 *.bak
 *.backup
 *~
+
+#wasm
+*signer-wasm/
+*wasm-nodejs/

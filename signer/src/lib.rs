@@ -1,5 +1,6 @@
 use goldilocks_crypto::{schnorr::{sign_with_nonce}, ScalarField, Goldilocks};
 use thiserror::Error;
+use hex;
 
 #[derive(Error, Debug)]
 pub enum SignerError {
@@ -63,19 +64,15 @@ impl KeyManager {
     }
 
     pub fn sign(&self, message: &[u8; 40]) -> Result<[u8; 80]> {
-        // Generate cryptographically secure random nonce
         let nonce_scalar = ScalarField::sample_crypto();
         let nonce_bytes = nonce_scalar.to_bytes_le();
         self.sign_with_fixed_nonce(message, &nonce_bytes)
     }
     
-    
-    
     fn sign_with_fixed_nonce(&self, message: &[u8; 40], nonce_bytes: &[u8]) -> Result<[u8; 80]> {
         let pk_bytes = self.private_key.to_bytes_le();
-        
-        // Pass message directly - sign_with_nonce will convert it properly
         let signature = sign_with_nonce(&pk_bytes, message, nonce_bytes)?;
+        
         let mut result = [0u8; 80];
         result.copy_from_slice(&signature);
         Ok(result)

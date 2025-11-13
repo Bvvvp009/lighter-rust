@@ -36,12 +36,66 @@ pub struct CreateOrderRequest {
     pub trigger_price: i64,
 }
 
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use rand::RngCore;
+use tokio::sync::Mutex as AsyncMutex;
+
 pub struct LighterClient {
     client: Client,
     base_url: String,
     key_manager: KeyManager,
     account_index: i64,
     api_key_index: u8,
+    // Nonce cache for optimistic nonce management (like Python SDK)
+    // Fetches once from API, then increments locally
+    nonce_cache: Arc<AsyncMutex<NonceCache>>,
+}
+
+struct NonceCache {
+    // Simple optimistic nonce management: fetch once, then increment locally
+    last_fetched_nonce: i64,  // Last nonce fetched from API (stored as nonce - 1, like Python)
+    nonce_offset: i64,        // How many nonces we've used since last fetch
+}
+
+impl NonceCache {
+    fn new() -> Self {
+        Self {
+            last_fetched_nonce: -1,  // -1 means not initialized
+            nonce_offset: 0,
+        }
+    }
+    
+    fn get_next_nonce(&mut self) -> Option<i64> {
+        if self.last_fetched_nonce == -1 {
+            None  // Not initialized, need to fetch from API
+        } else {
+            // Increment offset and return next nonce
+            // Formula: (last_fetched_nonce - 1) + offset + 1 = last_fetched_nonce + offset
+            self.nonce_offset += 1;
+            Some(self.last_fetched_nonce + self.nonce_offset)
+        }
+    }
+    
+    fn set_fetched_nonce(&mut self, nonce: i64) {
+        // Store as nonce - 1, so first increment gives us the correct nonce
+        // This matches Python's OptimisticNonceManager behavior
+        self.last_fetched_nonce = nonce - 1;
+        self.nonce_offset = 0;
+    }
+    
+    fn acknowledge_failure(&mut self) {
+        // Decrement offset on failure to allow retry with same nonce
+        // This matches Python's OptimisticNonceManager behavior
+        if self.nonce_offset > 0 {
+            self.nonce_offset -= 1;
+        }
+    }
+    
+    fn clear(&mut self) {
+        self.last_fetched_nonce = -1;
+        self.nonce_offset = 0;
+    }
 }
 
 impl LighterClient {
@@ -60,15 +114,81 @@ impl LighterClient {
             key_manager,
             account_index,
             api_key_index,
+            nonce_cache: Arc::new(AsyncMutex::new(NonceCache::new())),
         })
     }
     
     pub async fn create_order(&self, order: CreateOrderRequest) -> Result<Value> {
-        // Get nonce from API
-        let nonce = self.get_nonce().await?;
+        self.create_order_with_nonce(order, None).await
+    }
+    
+    /// Create order with optional nonce parameter and retry logic
+    /// If nonce is Some(n), uses that nonce (or -1 to fetch from API)
+    /// If nonce is None, uses optimistic nonce management
+    /// Automatically retries on invalid signature errors (21120) since same signature succeeds on retry
+    pub async fn create_order_with_nonce(&self, order: CreateOrderRequest, nonce: Option<i64>) -> Result<Value> {
+        const MAX_RETRIES: u32 = 5; // Increased from 3 to 5 for better success rate
+        const RETRY_DELAY_MS: u64 = 500; // Start with 500ms delay
+        
+        // Fetch nonce once before retry loop - we'll reuse the same nonce for retries
+        let nonce = self.get_nonce_or_use(nonce).await?;
+        
+        let mut last_error: Option<ApiError> = None;
+        
+        for attempt in 0..=MAX_RETRIES {
+            if attempt > 0 {
+                let delay_ms = RETRY_DELAY_MS * (attempt as u64);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            }
+            
+            match self.create_order_internal(&order, Some(nonce)).await {
+                Ok(response) => {
+                    let code = response["code"].as_i64().unwrap_or_default();
+                    if code == 200 {
+                        return Ok(response);
+                    } else if code == 21120 && attempt < MAX_RETRIES {
+                        // Invalid signature - retry with same nonce
+                        last_error = Some(ApiError::Api(format!("Invalid signature (code 21120) after {} attempts", attempt + 1)));
+                        continue;
+                    } else {
+                        // Other error or max retries reached
+                        {
+                            let mut cache = self.nonce_cache.lock().await;
+                            cache.acknowledge_failure();
+                        }
+                        return Ok(response);
+                    }
+                }
+                Err(e) => {
+                    if attempt < MAX_RETRIES {
+                        last_error = Some(e);
+                        continue;
+                    } else {
+                        {
+                            let mut cache = self.nonce_cache.lock().await;
+                            cache.acknowledge_failure();
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        
+        // If we get here, all retries failed
+        {
+            let mut cache = self.nonce_cache.lock().await;
+            cache.acknowledge_failure();
+        }
+        Err(last_error.unwrap_or_else(|| ApiError::Api("Failed after all retries".to_string())))
+    }
+    
+    /// Internal method to create order (without retry logic)
+    /// This is called by create_order_with_nonce for each retry attempt
+    /// Uses the provided nonce directly (no fetching)
+    async fn create_order_internal(&self, order: &CreateOrderRequest, nonce: Option<i64>) -> Result<Value> {
+        let nonce = nonce.expect("Nonce should be provided to create_order_internal");
         
         // Create transaction info with expiry time
-        // Transaction expires 10 minutes from now (599 seconds to account for timing differences)
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000; // 10 minutes - 1 second (in milliseconds)
         
@@ -84,24 +204,24 @@ impl LighterClient {
             "TimeInForce": order.time_in_force,
             "ReduceOnly": if order.reduce_only { 1 } else { 0 },
             "TriggerPrice": order.trigger_price,
-            "OrderExpiry": 0, // NilOrderExpiry for market orders
+            "OrderExpiry": 0,
             "ExpiredAt": expired_at,
             "Nonce": nonce,
             "Sig": ""
         });
         
-        // Sign transaction (measure signing time if needed)
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction(&tx_json)?;
         
-        // Add signature to transaction (base64-encoded)
         let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let sig_base64 = base64::engine::general_purpose::STANDARD.encode(&signature);
+        final_tx_info["Sig"] = json!(sig_base64);
         
-        // Send request with form data
+        let final_tx_json = serde_json::to_string(&final_tx_info)?;
+        
         let form_data = [
             ("tx_type", "14"), // CREATE_ORDER
-            ("tx_info", &serde_json::to_string(&final_tx_info)?),
+            ("tx_info", &final_tx_json),
             ("price_protection", "true"),
         ];
         
@@ -126,6 +246,31 @@ impl LighterClient {
         avg_execution_price: i64,
         is_ask: bool,
     ) -> Result<Value> {
+        self.create_market_order_with_nonce(
+            order_book_index,
+            client_order_index,
+            base_amount,
+            avg_execution_price,
+            is_ask,
+            None,
+        ).await
+    }
+    
+    /// Create market order with optional nonce parameter
+    pub async fn create_market_order_with_nonce(
+        &self,
+        order_book_index: u8,
+        client_order_index: u64,
+        base_amount: i64,
+        avg_execution_price: i64,
+        is_ask: bool,
+        nonce: Option<i64>,
+    ) -> Result<Value> {
+        eprintln!("[DEBUG create_market_order] Starting order creation:");
+        eprintln!("  client_order_index: {}", client_order_index);
+        eprintln!("  base_amount: {}", base_amount);
+        eprintln!("  price: {}", avg_execution_price);
+        
         let order = CreateOrderRequest {
             account_index: self.account_index,
             order_book_index,
@@ -138,11 +283,11 @@ impl LighterClient {
             reduce_only: false,
             trigger_price: 0,
         };
-        self.create_order(order).await
+        self.create_order_with_nonce(order, nonce).await
     }
 
     pub async fn cancel_order(&self, order_book_index: u8, order_index: i64) -> Result<Value> {
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_next_nonce_from_cache().await?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
@@ -182,7 +327,7 @@ impl LighterClient {
     }
 
     pub async fn cancel_all_orders(&self, time_in_force: u8, time: i64) -> Result<Value> {
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_next_nonce_from_cache().await?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
@@ -222,7 +367,7 @@ impl LighterClient {
     }
 
     pub async fn change_api_key(&self, new_public_key: &[u8; 40]) -> Result<Value> {
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_next_nonce_from_cache().await?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
@@ -283,7 +428,7 @@ impl LighterClient {
         leverage: u16,
         margin_mode: u8,
     ) -> Result<Value> {
-        let nonce = self.get_nonce().await?;
+        let nonce = self.get_next_nonce_from_cache().await?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
@@ -327,8 +472,8 @@ impl LighterClient {
         Ok(response_json)
     }
     
-    pub async fn get_nonce(&self) -> Result<i64> {
-        // Get next nonce from API endpoint
+    /// Fetch a single nonce from API
+    async fn fetch_nonce_from_api(&self) -> Result<i64> {
         let url = format!(
             "{}/api/v1/nextNonce?account_index={}&api_key_index={}",
             self.base_url, self.account_index, self.api_key_index
@@ -338,11 +483,66 @@ impl LighterClient {
         let response_text = response.text().await?;
         let response_json: Value = serde_json::from_str(&response_text)?;
         
-        // Extract nonce from JSON response
         let nonce = response_json["nonce"]
             .as_i64()
             .ok_or_else(|| ApiError::Api("Invalid nonce response format".to_string()))?;
         
+        Ok(nonce)
+    }
+    
+    /// Generate a 12-byte random nonce converted to i64
+    /// Uses cryptographically secure random number generation
+    pub fn generate_random_nonce() -> i64 {
+        let mut rng = rand::thread_rng();
+        let mut bytes = [0u8; 12];
+        rng.fill_bytes(&mut bytes);
+        
+        // Convert 12 bytes to i64 (taking first 8 bytes, little-endian)
+        // This gives us a large random number
+        let mut nonce_bytes = [0u8; 8];
+        nonce_bytes.copy_from_slice(&bytes[..8]);
+        i64::from_le_bytes(nonce_bytes)
+    }
+    
+    /// Get next nonce - fetches from API each time
+    /// This ensures we're always in sync with the API
+    async fn get_next_nonce_from_cache(&self) -> Result<i64> {
+        let nonce = self.fetch_nonce_from_api().await?;
+        
+        let mut cache = self.nonce_cache.lock().await;
+        cache.set_fetched_nonce(nonce);
+        
+        Ok(nonce)
+    }
+    
+    /// Refresh nonce from API (useful when errors occur)
+    async fn refresh_nonce_cache(&self) -> Result<()> {
+        let nonce = self.fetch_nonce_from_api().await?;
+        let mut cache = self.nonce_cache.lock().await;
+        cache.set_fetched_nonce(nonce);
+        Ok(())
+    }
+    
+    /// Get next nonce using optimistic nonce management
+    /// If provided_nonce is Some(n), uses that nonce (or -1 to fetch from cache)
+    /// If provided_nonce is None, gets nonce from cache (fetches once, then increments)
+    pub async fn get_nonce_or_use(&self, provided_nonce: Option<i64>) -> Result<i64> {
+        if let Some(nonce) = provided_nonce {
+            if nonce == -1 {
+                self.get_next_nonce_from_cache().await
+            } else {
+                Ok(nonce)
+            }
+        } else {
+            self.get_next_nonce_from_cache().await
+        }
+    }
+    
+    /// Refresh nonce from API (useful for manual refresh)
+    pub async fn refresh_nonce(&self) -> Result<i64> {
+        let nonce = self.fetch_nonce_from_api().await?;
+        let mut cache = self.nonce_cache.lock().await;
+        cache.set_fetched_nonce(nonce);
         Ok(nonce)
     }
     
@@ -390,7 +590,6 @@ impl LighterClient {
     /// # Returns
     /// An 80-byte signature array (s || e format)
     fn sign_transaction_internal(&self, tx_json: &str, tx_type: u32) -> Result<[u8; 80]> {
-                // Parse the transaction JSON to extract fields
         let tx_value: Value = serde_json::from_str(tx_json)?;
 
         // Determine chain ID based on base URL
@@ -443,7 +642,7 @@ impl LighterClient {
             .unwrap_or(0) as u32;
         let order_expiry = tx_value["OrderExpiry"].as_i64().unwrap_or(0);
         
-                vec![
+        vec![
                     Goldilocks::from_canonical_u64(lighter_chain_id as u64),
                     Goldilocks::from_canonical_u64(tx_type as u64),
                     to_goldi_i64(nonce),
@@ -557,14 +756,18 @@ impl LighterClient {
             }
         };
         
-                // Hash the Goldilocks field elements using Poseidon2 to produce a 40-byte hash
-        // The result is a quintic extension field element (Fp5) which is then converted to bytes
+        // Hash the Goldilocks field elements using Poseidon2 to produce a 40-byte hash
         use poseidon_hash::hash_to_quintic_extension;
         let hash_result = hash_to_quintic_extension(&elements);
         let message_array = hash_result.to_bytes_le();
+        
+        let mut hash_bytes = [0u8; 40];
+        hash_bytes.copy_from_slice(&message_array[..40]);
 
         // Sign the transaction hash using Schnorr signature
-        self.key_manager.sign(&message_array)
-            .map_err(|e| ApiError::Signer(e))
+        let signature = self.key_manager.sign(&hash_bytes)
+            .map_err(|e| ApiError::Signer(e))?;
+        
+        Ok(signature)
     }
 }

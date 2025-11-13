@@ -703,7 +703,6 @@ pub fn sign_with_nonce(private_key: &[u8], message: &[u8], nonce_bytes: &[u8]) -
         .map_err(|_| CryptoError::InvalidPrivateKeyLength(nonce_bytes.len()))?;
     
     // Convert message to Fp5Element (quintic extension field element)
-    // Message is split into 8-byte chunks, each chunk becomes a Goldilocks field element
     let mut message_elements = [Goldilocks::zero(); 5];
     for (i, chunk) in message.chunks(8).enumerate().take(5) {
         let mut bytes = [0u8; 8];
@@ -718,9 +717,7 @@ pub fn sign_with_nonce(private_key: &[u8], message: &[u8], nonce_bytes: &[u8]) -
     let r_encoded = r_point.encode();
     
     // Step 2: Compute challenge e = H(R || message)
-    // Prepare pre-image: concatenate R elements (5) and message elements (5) = 10 total
     use poseidon_hash::hash_to_quintic_extension;
-    // Use fixed-size array instead of Vec to avoid heap allocation
     let mut pre_image = [Goldilocks::zero(); 10];
     pre_image[..5].copy_from_slice(&r_encoded.0);
     pre_image[5..].copy_from_slice(&message_fp5.0);
@@ -734,15 +731,10 @@ pub fn sign_with_nonce(private_key: &[u8], message: &[u8], nonce_bytes: &[u8]) -
     let s = nonce_scalar.sub(e_times_private);
     
     // Step 4: Assemble signature as (s || e)
-    // Signature format: 40 bytes for s, 40 bytes for e (little-endian)
-    // Use fixed-size array instead of Vec to avoid heap allocation
     let mut signature = [0u8; 80];
-    
-    // Add s (40 bytes from scalar)
     let s_bytes = s.to_bytes_le();
     signature[..40].copy_from_slice(&s_bytes);
     
-    // Add e (40 bytes from scalar)
     let e_bytes = e_scalar.to_bytes_le();
     signature[40..].copy_from_slice(&e_bytes);
     

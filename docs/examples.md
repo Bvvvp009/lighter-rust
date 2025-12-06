@@ -2,13 +2,17 @@
 
 Practical code examples for using the Rust Signer libraries.
 
+**📚 For comprehensive examples, see [Examples README](../api-client/examples/README.md)**
+
 ## Table of Contents
 
 1. [Basic Signing](#basic-signing)
-2. [API Client Usage](#api-client-usage)
-3. [Key Management](#key-management)
-4. [Auth Tokens](#auth-tokens)
-5. [Error Handling](#error-handling)
+2. [Perpetual Futures Trading](#perpetual-futures-trading)
+3. [Spot Trading](#spot-trading)
+4. [API Client Usage](#api-client-usage)
+5. [Key Management](#key-management)
+6. [Auth Tokens](#auth-tokens)
+7. [Error Handling](#error-handling)
 
 ## Basic Signing
 
@@ -16,105 +20,137 @@ Practical code examples for using the Rust Signer libraries.
 
 ```rust
 use signer::KeyManager;
-use poseidon_hash::Fp5Element;
 
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Create message
-let message_bytes = vec![0u8; 40];
-let message = Fp5Element::from_bytes_le(&message_bytes);
+// Sign a 40-byte message hash
+let message: [u8; 40] = [0u8; 40]; // Your 40-byte message hash
 
-// Sign
+// Sign (returns 80-byte signature: s || e)
 let signature = key_manager.sign(&message)?;
 println!("Signature: {}", hex::encode(&signature));
 ```
 
-### Verify Signature
+## Perpetual Futures Trading
+
+### Market Order (Perpetual)
 
 ```rust
-use crypto::{SchnorrSignature, Point, ScalarField};
-use poseidon_hash::Fp5Element;
-
-let key_manager = KeyManager::new(private_key_hex)?;
-let message = Fp5Element::one();
-let signature = key_manager.sign(&message)?;
-
-// Verify (requires public key and message)
-let public_key = key_manager.public_key();
-let sig = SchnorrSignature::from_bytes(&signature)?;
-let is_valid = sig.verify(&public_key, &message);
-println!("Valid: {}", is_valid);
-```
-
-## API Client Usage
-
-### Market Order
-
-```rust
-use api_client::{LighterClient, CreateOrderRequest};
+use api_client::LighterClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = LighterClient::new(base_url, private_key, account_index, api_key_index)?;
     
-    let order = CreateOrderRequest {
-        account_index: 0,
-        order_book_index: 0,
-        client_order_index: 12345,
-        base_amount: 1000,
-        price: 349659,              // Market price
-        is_ask: false,              // Buy
-        order_type: 0,              // Market
-        time_in_force: 0,           // IOC
-        reduce_only: false,
-        trigger_price: 0,
-    };
+    // Create market buy order on perpetual futures
+    let response = client.create_market_order(
+        0,           // order_book_index (0 = ETH/USDC or BTC/USDC perpetual)
+        12345,       // client_order_index
+        1000,        // base_amount
+        349659,      // avg_execution_price (max price)
+        false,       // is_ask (false = buy)
+    ).await?;
     
-    let response = client.create_order(order).await?;
     println!("Order submitted: {:?}", response);
     Ok(())
 }
 ```
 
-### Limit Order
+### Limit Order (Perpetual)
 
 ```rust
-let limit_order = CreateOrderRequest {
-    account_index: 0,
+use api_client::{LighterClient, CreateOrderRequest};
+
+let order = CreateOrderRequest {
+    account_index,
+    order_book_index: 0,        // Perpetual market index
+    client_order_index: 12345,
+    base_amount: 1000,
+    price: 349659,              // Limit price (cents)
+    is_ask: false,              // Buy order
+    order_type: 0,              // 0 = Limit order
+    time_in_force: 1,           // 1 = Good Till Time
+    reduce_only: false,         // Can increase position
+    trigger_price: 0,           // No trigger
+};
+
+let response = client.create_order(order).await?;
+```
+
+### Stop Loss & Take Profit
+
+```rust
+// Stop Loss Limit Order
+let sl_order = CreateOrderRequest {
+    account_index,
     order_book_index: 0,
-    client_order_index: 67890,
-    base_amount: 2000,
-    price: 51000_0000,             // Limit price
-    is_ask: true,                  // Sell
-    order_type: 1,                 // Limit
-    time_in_force: 1,              // GTC
-    reduce_only: false,
+    client_order_index: 20001,
+    base_amount: 1000,
+    price: 450000,              // Limit price
+    is_ask: false,              // Buy to close short
+    order_type: 3,              // 3 = StopLossLimitOrder
+    time_in_force: 1,           // Good Till Time
+    reduce_only: true,          // Only reduce position
+    trigger_price: 450000,      // Trigger at this price
+};
+
+let response = client.create_order(sl_order).await?;
+```
+
+## Spot Trading
+
+### Spot Limit Order
+
+```rust
+use api_client::{LighterClient, CreateOrderRequest};
+
+let order = CreateOrderRequest {
+    account_index,
+    order_book_index: 0,        // Spot market index (different from perpetuals)
+    client_order_index: 12345,
+    base_amount: 1000,          // Amount in smallest unit
+    price: 349659,              // Limit price
+    is_ask: false,              // Buy order
+    order_type: 0,              // Limit order
+    time_in_force: 1,           // Good Till Time
+    reduce_only: false,         // Spot: typically false
     trigger_price: 0,
 };
 
-let response = client.create_order(limit_order).await?;
+let response = client.create_order(order).await?;
 ```
+
+### Spot Market Order
+
+```rust
+// Spot market order (use spot market index)
+let response = client.create_market_order(
+    spot_market_index,  // Use spot market index, not perpetual
+    12345,
+    1000,
+    349659,
+    false,
+).await?;
+```
+
+**See [Examples README](../api-client/examples/README.md) for comprehensive spot and perpetual trading examples.**
 
 ## Key Management
 
 ### Generate Key Pair
 
 ```rust
-use crypto::ScalarField;
 use signer::KeyManager;
 
-// Generate random private key
-let private_scalar = ScalarField::sample_crypto();
-let private_bytes: [u8; 32] = private_scalar.to_bytes_array();
+// Generate cryptographically secure random key
+let key_manager = KeyManager::generate();
 
-// Pad to 40 bytes for Lighter format
-let mut private_key = [0u8; 40];
-private_key[..32].copy_from_slice(&private_bytes);
+// Get keys
+let private_key = key_manager.private_key_bytes();
+let public_key = key_manager.public_key_bytes();
 
-// Create KeyManager
-let key_manager = KeyManager::from_bytes(&private_key)?;
-let public_key = key_manager.public_key_hex();
-println!("Public key: {}", public_key);
+println!("Private key: {}", hex::encode(&private_key));
+println!("Public key: {}", hex::encode(&public_key));
 ```
 
 ### Load from Environment
@@ -123,9 +159,11 @@ println!("Public key: {}", public_key);
 use std::env;
 use signer::KeyManager;
 
+dotenv::dotenv().ok();
+
 let private_key_hex = env::var("API_PRIVATE_KEY")
-    .expect("API_PRIVATE_KEY not set");
-let key_manager = KeyManager::new(&private_key_hex)?;
+    .map_err(|_| "API_PRIVATE_KEY environment variable is required")?;
+let key_manager = KeyManager::from_hex(&private_key_hex)?;
 ```
 
 ## Auth Tokens
@@ -136,39 +174,42 @@ let key_manager = KeyManager::new(&private_key_hex)?;
 use signer::KeyManager;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Get current timestamp
-let timestamp = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap()
-    .as_millis() as i64;
-
-// Create auth message
-let message = format!("LIGHTER_AUTH:{}", timestamp);
+// Calculate deadline (Unix timestamp in seconds)
+let deadline = SystemTime::now()
+    .duration_since(UNIX_EPOCH)?
+    .as_secs() as i64 + 600; // 10 minutes from now
 
 // Generate token
-let auth_token = key_manager.create_auth_token(&message)?;
+// Format: "deadline:account_index:api_key_index:signature_hex"
+let auth_token = key_manager.create_auth_token(
+    deadline,
+    account_index,
+    api_key_index,
+)?;
+
 println!("Auth token: {}", auth_token);
 ```
 
-### Auth Token with Expiry
+### Auth Token with Custom Expiry
 
 ```rust
 use signer::KeyManager;
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Token valid for 1 hour
-let expires_at = SystemTime::now() + Duration::from_secs(3600);
-let timestamp = expires_at
-    .duration_since(UNIX_EPOCH)
-    .unwrap()
-    .as_millis() as i64;
+// Token valid for 1 hour (3600 seconds)
+let deadline = SystemTime::now()
+    .duration_since(UNIX_EPOCH)?
+    .as_secs() as i64 + 3600;
 
-let message = format!("LIGHTER_AUTH:{}:{}", timestamp, expires_at);
-let token = key_manager.create_auth_token(&message)?;
+let token = key_manager.create_auth_token(
+    deadline,
+    account_index,
+    api_key_index,
+)?;
 ```
 
 ## Error Handling
@@ -277,24 +318,35 @@ async fn monitor_order(
 }
 ```
 
-## Complete Working Example
+## Running Examples
 
-See `rust-signer/api-client/examples/verify_fixes.rs` for a complete, working example that:
-- Loads configuration from environment
-- Creates a client
-- Constructs a transaction
-- Signs and submits an order
-- Handles responses and errors
-
-Run it with:
+All examples are in the `api-client/examples/` directory:
 
 ```bash
-cd rust-signer/api-client
-cargo run --example verify_fixes
+# Perpetual futures
+cargo run --example create_limit_order
+cargo run --example create_market_order
+cargo run --example create_sl_tp
+
+# Spot trading
+cargo run --example create_spot_limit_order
+cargo run --example create_spot_market_order
+cargo run --example spot_trading_basics
+
+# Advanced
+cargo run --example hft_multi_client
+cargo run --example create_grouped_ioc_with_attached_sl_tp
 ```
+
+**⚠️ All examples require a `.env` file with:**
+- `BASE_URL`
+- `ACCOUNT_INDEX`
+- `API_KEY_INDEX`
+- `API_PRIVATE_KEY`
 
 ## See Also
 
-- [Getting Started Guide](./getting-started.md)
-- [API Client Documentation](./api-client.md)
-- [Signer Documentation](./signer.md)
+- [Examples README](../api-client/examples/README.md) - Comprehensive examples guide
+- [Getting Started Guide](./getting-started.md) - Quick start tutorial
+- [API Client Documentation](./api-client.md) - API reference
+- [Signer Documentation](./signer.md) - Signing internals

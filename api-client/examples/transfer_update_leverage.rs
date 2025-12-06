@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Update Leverage
     println!("📝 Updating Leverage...");
-    let market_index = 0u8;
+    let market_index = 0u8;  // Market index (u8)
     let leverage = 3u16; // 3x leverage
     let margin_mode = 1u8; // 0 = CROSS_MARGIN, 1 = ISOLATED_MARGIN
 

@@ -84,7 +84,7 @@ impl KeyManager {
         account_index: i64,
         api_key_index: u8,
     ) -> Result<String> {
-        // Match Go: ConstructAuthToken format "deadline:account_index:api_key_index"
+        // Construct auth token message: "deadline:account_index:api_key_index"
         let auth_data = format!("{}:{}:{}", deadline, account_index, api_key_index);
         
         // Convert message bytes to Goldilocks elements
@@ -117,7 +117,7 @@ impl KeyManager {
             i = next_start;
         }
         
-        // Hash the elements using Poseidon2 (matching Go's HashToQuinticExtension)
+        // Hash the elements using Poseidon2 to produce a quintic extension field element
         use poseidon_hash::hash_to_quintic_extension;
         let hash_fp5 = hash_to_quintic_extension(&elements);
         

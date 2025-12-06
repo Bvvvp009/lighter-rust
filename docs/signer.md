@@ -5,10 +5,10 @@ The `signer` crate provides high-level key management and transaction signing fu
 ## Overview
 
 This library provides:
-- **KeyManager**: Manages private keys and generates public keys
-- **Transaction Signing**: Signs transactions for Lighter Exchange
+- **KeyManager**: Manages private keys and generates public keys (40-byte format)
+- **Transaction Signing**: Signs 40-byte message hashes using Schnorr signatures
 - **Auth Token Generation**: Creates authentication tokens for API access
-- **Message Signing**: General-purpose message signing
+- **Message Signing**: Signs arbitrary 40-byte messages
 
 ## Installation
 
@@ -26,34 +26,34 @@ poseidon-hash = { path = "../poseidon-hash" }
 ```rust
 use signer::KeyManager;
 
-// Create KeyManager from private key (40 bytes hex string)
-let private_key_hex = "your_40_byte_hex_private_key";
-let key_manager = KeyManager::new(private_key_hex)?;
+// Create KeyManager from private key hex string (80 hex chars = 40 bytes)
+let private_key_hex = "6227989d19d906db99e5da73c3ce4c2e41d80854cecce7618a1e45978a604c7c8fac5d6cc3eb315b";
+let key_manager = KeyManager::from_hex(private_key_hex)?;
+
+// Or from bytes directly
+let private_key_bytes: [u8; 40] = [0u8; 40]; // Your 40-byte private key
+let key_manager = KeyManager::new(&private_key_bytes)?;
 
 // Get public key (40 bytes)
 let public_key = key_manager.public_key_bytes();
 println!("Public key: {}", hex::encode(&public_key));
 
-// Get public key as hex string
-let public_key_hex = key_manager.public_key_hex();
+// Get private key bytes
+let private_key = key_manager.private_key_bytes();
 ```
 
 ### Signing Messages
 
 ```rust
 use signer::KeyManager;
-use poseidon_hash::Fp5Element;
 
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Create a message (40 bytes -> Fp5Element)
-let message_bytes = vec![0u8; 40];
-let message = Fp5Element::from_bytes_le(&message_bytes);
-
-// Sign the message
+// Sign a 40-byte message hash
+let message: [u8; 40] = [0u8; 40]; // Your 40-byte message hash
 let signature = key_manager.sign(&message)?;
 
-// Signature is 80 bytes (R point + scalar)
+// Signature is 80 bytes (s || e format: 40 bytes s + 40 bytes e)
 println!("Signature: {}", hex::encode(&signature));
 ```
 
@@ -63,18 +63,21 @@ println!("Signature: {}", hex::encode(&signature));
 use signer::KeyManager;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Create auth token message
-let timestamp = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap()
-    .as_millis() as i64;
-
-let message = format!("LIGHTER_AUTH:{}", timestamp);
+// Calculate deadline (Unix timestamp in seconds)
+let deadline = SystemTime::now()
+    .duration_since(UNIX_EPOCH)?
+    .as_secs() as i64 + 600; // 10 minutes from now
 
 // Generate auth token
-let auth_token = key_manager.create_auth_token(&message)?;
+// Format: "deadline:account_index:api_key_index:signature_hex"
+let auth_token = key_manager.create_auth_token(
+    deadline,
+    account_index,  // Your account index
+    api_key_index,  // Your API key index
+)?;
+
 println!("Auth token: {}", auth_token);
 ```
 
@@ -90,54 +93,67 @@ The main struct for managing keys and signing operations.
 use signer::KeyManager;
 
 // From private key hex string (40 bytes = 80 hex characters)
-let private_key_hex = "0123456789abcdef..."; // 80 characters
-let key_manager = KeyManager::new(private_key_hex)?;
+// Supports both "0x..." and plain hex formats
+let private_key_hex = "6227989d19d906db99e5da73c3ce4c2e41d80854cecce7618a1e45978a604c7c8fac5d6cc3eb315b";
+let key_manager = KeyManager::from_hex(private_key_hex)?;
+
+// Or with 0x prefix
+let key_manager = KeyManager::from_hex("0x6227989d19d906db99e5da73c3ce4c2e41d80854cecce7618a1e45978a604c7c8fac5d6cc3eb315b")?;
 
 // From private key bytes (40 bytes)
-let private_key_bytes: [u8; 40] = [0u8; 40];
-let key_manager = KeyManager::from_bytes(&private_key_bytes)?;
+let private_key_bytes: [u8; 40] = [0u8; 40]; // Your 40-byte private key
+let key_manager = KeyManager::new(&private_key_bytes)?;
+
+// Generate a new random key pair
+let key_manager = KeyManager::generate();
 ```
 
 #### Getting Public Key
 
 ```rust
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
 // As bytes (40 bytes)
-let public_key_bytes: Vec<u8> = key_manager.public_key_bytes();
+let public_key_bytes: [u8; 40] = key_manager.public_key_bytes();
 
-// As hex string
-let public_key_hex: String = key_manager.public_key_hex();
+// As hex string (encode manually)
+let public_key_hex = hex::encode(public_key_bytes);
+println!("Public key: {}", public_key_hex);
 
-// As Point (from crypto crate)
-let public_key_point = key_manager.public_key();
+// Get private key bytes (40 bytes)
+let private_key_bytes: [u8; 40] = key_manager.private_key_bytes();
 ```
 
 #### Signing
 
 ```rust
-use poseidon_hash::Fp5Element;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-let key_manager = KeyManager::new(private_key_hex)?;
-let message = Fp5Element::one();
+// Sign a 40-byte message hash
+// Message should be a 40-byte hash (e.g., from Poseidon2)
+let message: [u8; 40] = [0u8; 40]; // Your 40-byte message hash
 
-// Sign message (returns 80-byte signature)
-let signature: Vec<u8> = key_manager.sign(&message)?;
+// Sign message (returns 80-byte signature: s || e)
+let signature: [u8; 80] = key_manager.sign(&message)?;
 
-// Debug signing (deterministic, for testing)
-let signature_debug = key_manager.sign_debug(&message, nonce)?;
+// Signature format: 40 bytes s || 40 bytes e
+println!("Signature: {}", hex::encode(&signature));
 ```
 
 #### Auth Tokens
 
 ```rust
-let key_manager = KeyManager::new(private_key_hex)?;
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Create auth token from message string
-let message = "LIGHTER_AUTH:1234567890";
-let auth_token = key_manager.create_auth_token(message)?;
+// Create auth token
+// Format: "deadline:account_index:api_key_index:signature_hex"
+let deadline = 1234567890i64; // Unix timestamp in seconds
+let account_index = 271i64;
+let api_key_index = 4u8;
 
-// Auth token is base64-encoded signature
+let auth_token = key_manager.create_auth_token(deadline, account_index, api_key_index)?;
+
+// Token format: "deadline:account_index:api_key_index:signature_hex"
 println!("Token: {}", auth_token);
 ```
 
@@ -189,9 +205,10 @@ fn sign_string_message(key_manager: &KeyManager, message: &str) -> Result<Vec<u8
 Auth tokens follow this format:
 
 ```
-Message: "LIGHTER_AUTH:{timestamp}"
-Signature: Sign(Message) -> base64 encoded
-Token: base64(signature)
+Message: "deadline:account_index:api_key_index"
+Hash: Poseidon2(Message bytes) -> 40-byte hash
+Signature: Sign(Hash) -> 80-byte signature (s || e)
+Token: "deadline:account_index:api_key_index:signature_hex"
 ```
 
 Example implementation:
@@ -200,38 +217,40 @@ Example implementation:
 use signer::KeyManager;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-fn create_lighter_auth_token(
-    key_manager: &KeyManager,
-    timestamp: i64,
-) -> Result<String, SignerError> {
-    let message = format!("LIGHTER_AUTH:{}", timestamp);
-    key_manager.create_auth_token(&message)
-}
+let key_manager = KeyManager::from_hex(private_key_hex)?;
 
-// Usage
-let timestamp = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .unwrap()
-    .as_millis() as i64;
+// Calculate deadline (Unix timestamp in seconds)
+let deadline = SystemTime::now()
+    .duration_since(UNIX_EPOCH)?
+    .as_secs() as i64 + 600; // 10 minutes from now
 
-let token = create_lighter_auth_token(&key_manager, timestamp)?;
+// Generate token
+let token = key_manager.create_auth_token(
+    deadline,
+    account_index,
+    api_key_index,
+)?;
+
+// Token: "deadline:account_index:api_key_index:signature_hex"
+println!("Use this token: {}", token);
 ```
 
-### Deterministic Signing (Testing)
+### Key Generation
 
-For testing purposes, you can use deterministic signing:
+Generate a new random key pair:
 
 ```rust
 use signer::KeyManager;
-use crypto::ScalarField;
-use poseidon_hash::Fp5Element;
 
-let key_manager = KeyManager::new(private_key_hex)?;
-let message = Fp5Element::one();
+// Generate cryptographically secure random key
+let key_manager = KeyManager::generate();
 
-// Use fixed nonce for reproducible signatures
-let nonce = ScalarField::from_u64(12345);
-let signature = key_manager.sign_debug(&message, &nonce)?;
+// Get keys
+let private_key = key_manager.private_key_bytes();
+let public_key = key_manager.public_key_bytes();
+
+println!("Private key: {}", hex::encode(&private_key));
+println!("Public key: {}", hex::encode(&public_key));
 ```
 
 ## Error Handling
@@ -265,41 +284,23 @@ match KeyManager::new(invalid_key) {
 
 ## Common Patterns
 
-### Key Pair Generation
-
-```rust
-use crypto::ScalarField;
-use signer::KeyManager;
-
-// Generate random private key
-let private_scalar = ScalarField::sample_crypto();
-let private_bytes: [u8; 32] = private_scalar.to_bytes_array();
-
-// Pad to 40 bytes (for Lighter format)
-let mut private_key = [0u8; 40];
-private_key[..32].copy_from_slice(&private_bytes);
-
-// Create KeyManager
-let key_manager = KeyManager::from_bytes(&private_key)?;
-```
-
 ### Signing Transaction Hashes
 
+The `api-client` library handles transaction signing internally. For custom use cases:
+
 ```rust
 use signer::KeyManager;
-use poseidon_hash::Fp5Element;
 
-fn sign_transaction_hash(
-    key_manager: &KeyManager,
-    tx_hash: &[u8; 32],
-) -> Result<Vec<u8>, SignerError> {
-    // Convert 32-byte hash to Fp5Element (pad to 40 bytes)
-    let mut message_bytes = [0u8; 40];
-    message_bytes[..32].copy_from_slice(tx_hash);
-    let message = Fp5Element::from_bytes_le(&message_bytes);
-    
-    key_manager.sign(&message)
-}
+let key_manager = KeyManager::from_hex(private_key_hex)?;
+
+// Transaction hash from Poseidon2 (40 bytes)
+let tx_hash: [u8; 40] = [0u8; 40]; // Your 40-byte transaction hash
+
+// Sign the hash
+let signature = key_manager.sign(&tx_hash)?;
+
+// Signature is 80 bytes (s || e format)
+println!("Signature: {}", hex::encode(&signature));
 ```
 
 ## Performance

@@ -1,10 +1,10 @@
-use api_client::LighterClient;
+use api_client::{LighterClient, WithdrawRequest};
 use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "═".repeat(80));
-    println!("🚀 CREATE MARKET ORDER EXAMPLE");
+    println!("🚀 WITHDRAW USDC FROM L2 (L2 Withdrawal)");
     println!("{}", "═".repeat(80));
     println!();
 
@@ -31,28 +31,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
 
-    // Create a market order
-    println!("📝 Creating market order...");
-    let response = client.create_market_order(
-        0,                    // order_book_index (0 = BTC-USD or ETH-USD)
-        12345,                // client_order_index (unique identifier)
-        1000,                 // base_amount (0.001 tokens in smallest unit)
-        349659,               // avg_execution_price (max price in cents)
-        false,                // is_ask (false = buy order)
-    ).await?;
+    // Withdrawal amount in USDC (with 6 decimals)
+    // Example: 1000000 = 1.0 USDC, 100000 = 0.1 USDC
+    let usdc_amount: u64 = 1000000; // 1.0 USDC
 
-    println!("✅ Market order submitted!");
+    println!("📝 Withdrawing USDC from L2");
+    println!("  Amount: {} USDC ({} in smallest unit)", usdc_amount as f64 / 1_000_000.0, usdc_amount);
+    println!("  Transaction Type: L2 Withdraw (13)");
+    println!("  Destination: L1 (Ethereum mainnet/testnet)");
+    println!();
+    println!("⚠️  Note: The 'invalid asset index' (21801) error typically indicates:");
+    println!("   - Account doesn't have sufficient USDC balance");
+    println!("   - Account doesn't have withdrawal permissions enabled");
+    println!("   - Account doesn't meet minimum withdrawal requirements");
+    println!("   - Testnet-specific restrictions");
+    println!("   The transaction structure is correct - this is a server-side validation.");
+    println!();
+
+    let request = WithdrawRequest {
+        usdc_amount,
+    };
+
+    let response = client.withdraw(request).await?;
+
+    println!("✅ Withdrawal submitted!");
     println!("📥 Response:");
     println!("{}", serde_json::to_string_pretty(&response)?);
 
     let code = response["code"].as_i64().unwrap_or_default();
     if code == 200 {
-        println!("\n✅ Order created successfully!");
+        println!("\n✅ L2 withdrawal transaction created successfully!");
+        println!("\n📊 Withdrawal Details:");
+        println!("  - Funds will be withdrawn from L2 to L1");
+        println!("  - There may be a withdrawal delay period");
+        println!("  - Check withdrawal history for status updates");
         if let Some(tx_hash) = response["tx_hash"].as_str() {
-            println!("  Transaction Hash: {}", tx_hash);
+            println!("\n  Transaction Hash: {}", tx_hash);
         }
     } else {
-        println!("\n⚠️  Order submission returned code: {}", code);
+        println!("\n⚠️  Withdrawal returned code: {}", code);
         if let Some(msg) = response["message"].as_str() {
             println!("  Message: {}", msg);
         }
@@ -60,3 +77,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+

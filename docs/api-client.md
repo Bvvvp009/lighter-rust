@@ -132,30 +132,43 @@ pub struct CreateOrderRequest {
 
 ```rust
 // Order Type Constants
-const MARKET_ORDER: u8 = 0;
-const LIMIT_ORDER: u8 = 1;
+const LIMIT_ORDER: u8 = 0;
+const MARKET_ORDER: u8 = 1;
+const STOP_LOSS_ORDER: u8 = 2;           // Market SL
+const STOP_LOSS_LIMIT_ORDER: u8 = 3;     // Limit SL
+const TAKE_PROFIT_ORDER: u8 = 4;         // Market TP
+const TAKE_PROFIT_LIMIT_ORDER: u8 = 5;   // Limit TP
 
 // Time in Force Constants
-const IMMEDIATE_OR_CANCEL: u8 = 0;
-const GOOD_TILL_CANCEL: u8 = 1;
-const FILL_OR_KILL: u8 = 2;
-const POST_ONLY: u8 = 3;
+const IMMEDIATE_OR_CANCEL: u8 = 0;  // IOC
+const GOOD_TILL_TIME: u8 = 1;       // GTT
+const FILL_OR_KILL: u8 = 2;         // FOK
+const POST_ONLY: u8 = 3;            // Post-only
 ```
 
 ## Advanced Usage
 
 ### Environment Configuration
 
-Use environment variables for configuration:
+**⚠️ Security:** All examples now require environment variables. Never hardcode secrets.
 
 ```rust
 use std::env;
 
+// Load from .env file
+dotenv::dotenv().ok();
+
+// Required environment variables
 let base_url = env::var("BASE_URL")
-    .unwrap_or_else(|_| "https://mainnet.zklighter.elliot.ai".to_string());
-let private_key = env::var("API_PRIVATE_KEY")?;
-let account_index: i64 = env::var("ACCOUNT_INDEX")?.parse()?;
-let api_key_index: u8 = env::var("API_KEY_INDEX")?.parse()?;
+    .map_err(|_| "BASE_URL environment variable is required")?;
+let private_key = env::var("API_PRIVATE_KEY")
+    .map_err(|_| "API_PRIVATE_KEY environment variable is required")?;
+let account_index: i64 = env::var("ACCOUNT_INDEX")
+    .map_err(|_| "ACCOUNT_INDEX environment variable is required")?
+    .parse()?;
+let api_key_index: u8 = env::var("API_KEY_INDEX")
+    .map_err(|_| "API_KEY_INDEX environment variable is required")?
+    .parse()?;
 
 let client = LighterClient::new(base_url, &private_key, account_index, api_key_index)?;
 ```
@@ -187,25 +200,26 @@ match client.create_order(order).await {
 ### Chain ID Configuration
 
 The client automatically determines the chain ID based on the base URL:
-- Mainnet URLs → Chain ID: 304
-- Testnet URLs → Chain ID: 300
+- URLs containing `elliot.ai` or `testnet` → Chain ID: 300 (Testnet)
+- URLs containing `zklighter.com` (but not `elliot.ai`) → Chain ID: 304 (Mainnet)
+- Default: 300 (Testnet) for safety
 
 ```rust
-// Mainnet
-let client = LighterClient::new(
-    "https://mainnet.zklighter.elliot.ai".to_string(),
-    private_key,
-    account_index,
-    api_key_index,
-)?; // Uses chain ID 304
-
-// Testnet
+// Testnet (Chain ID 300)
 let client = LighterClient::new(
     "https://testnet.zklighter.elliot.ai".to_string(),
     private_key,
     account_index,
     api_key_index,
-)?; // Uses chain ID 300
+)?;
+
+// Mainnet (Chain ID 304)
+let client = LighterClient::new(
+    "https://zklighter.com".to_string(),
+    private_key,
+    account_index,
+    api_key_index,
+)?;
 ```
 
 ### Transaction Expiry
@@ -247,47 +261,84 @@ let tx = json!({
 
 ## Examples
 
-### Market Buy Order
+### Perpetual Futures Trading
+
+#### Market Buy Order (Perpetual)
+
+```rust
+use api_client::LighterClient;
+
+let client = LighterClient::new(base_url, private_key, account_index, api_key_index)?;
+
+// Create market buy order on perpetual futures
+let response = client.create_market_order(
+    0,           // order_book_index (0 = ETH/USDC or BTC/USDC perpetual)
+    12345,       // client_order_index
+    1000,        // base_amount (0.001 tokens)
+    50000_0000,  // avg_execution_price (max price in cents)
+    false,       // is_ask (false = buy)
+).await?;
+```
+
+#### Limit Order (Perpetual)
 
 ```rust
 use api_client::{LighterClient, CreateOrderRequest};
 
-let client = LighterClient::new(base_url, private_key, account_index, api_key_index)?;
-
-let buy_order = CreateOrderRequest {
+let order = CreateOrderRequest {
     account_index,
-    order_book_index: 0,        // BTC-USD
+    order_book_index: 0,        // Perpetual market index
     client_order_index: 12345,
-    base_amount: 1000,          // 0.001 BTC
-    price: 50000_0000,          // $50,000 (market price)
+    base_amount: 1000,          // Order size
+    price: 50000_0000,          // Limit price (cents)
     is_ask: false,              // Buy order
-    order_type: 0,              // Market order
-    time_in_force: 0,           // Immediate or cancel
-    reduce_only: false,
-    trigger_price: 0,
+    order_type: 0,              // 0 = Limit order
+    time_in_force: 1,           // 1 = Good Till Time
+    reduce_only: false,         // Can increase position
+    trigger_price: 0,           // No trigger
 };
 
-let response = client.create_order(buy_order).await?;
+let response = client.create_order(order).await?;
 ```
 
-### Limit Sell Order
+### Spot Trading
+
+#### Spot Limit Order
 
 ```rust
-let sell_order = CreateOrderRequest {
+use api_client::{LighterClient, CreateOrderRequest};
+
+let order = CreateOrderRequest {
     account_index,
-    order_book_index: 0,
-    client_order_index: 67890,
-    base_amount: 2000,          // 0.002 BTC
-    price: 51000_0000,          // $51,000 limit price
-    is_ask: true,               // Sell order
-    order_type: 1,              // Limit order
-    time_in_force: 1,           // Good till cancel
-    reduce_only: false,
+    order_book_index: 0,        // Spot market index (different from perpetuals)
+    client_order_index: 12345,
+    base_amount: 1000,          // Amount in smallest unit
+    price: 50000_0000,          // Limit price
+    is_ask: false,              // Buy order
+    order_type: 0,              // Limit order
+    time_in_force: 1,           // Good Till Time
+    reduce_only: false,         // Spot: typically false
     trigger_price: 0,
 };
 
-let response = client.create_order(sell_order).await?;
+let response = client.create_order(order).await?;
 ```
+
+#### Spot Market Order
+
+```rust
+// Spot market orders work the same way
+// Just use the correct spot market index
+let response = client.create_market_order(
+    spot_market_index,  // Use spot market index, not perpetual
+    12345,
+    1000,
+    50000_0000,
+    false,
+).await?;
+```
+
+**See [Examples README](../api-client/examples/README.md) for comprehensive spot and perpetual trading examples.**
 
 ## Response Format
 
@@ -314,29 +365,41 @@ Common API error codes:
 
 ## Testing
 
-See the examples directory for working examples:
+See the examples directory for comprehensive examples:
 
 ```bash
-# Run verification example
-cargo run --example verify_fixes
+# Perpetual futures trading
+cargo run --example create_limit_order
+cargo run --example create_market_order
+cargo run --example create_sl_tp
 
-# Run simple test
-cargo run --example simple_test
+# Spot trading
+cargo run --example create_spot_limit_order
+cargo run --example create_spot_market_order
+cargo run --example spot_trading_basics
+
+# High-frequency trading
+cargo run --example hft_multi_client
+
+# See examples/README.md for full list
 ```
 
 ## Best Practices
 
-1. **Nonce Management**: The client automatically manages nonces. Don't reuse nonces manually.
+1. **Nonce Management**: The client automatically manages nonces using lock-free atomic operations. Use automatic nonce mode for best performance.
 2. **Error Handling**: Always handle `ApiError` appropriately for production code.
 3. **Rate Limiting**: Implement backoff strategies for rate limit errors (429).
-4. **Private Keys**: Never expose private keys. Use environment variables or secure storage.
-5. **Order IDs**: Use unique `client_order_index` values to track orders.
-6. **Price Precision**: Prices use 4 decimal places (multiply by 10,000).
+4. **Private Keys**: Never expose private keys. Use environment variables (`.env` file) - all examples require this.
+5. **Order IDs**: Use unique `client_order_index` values to track orders (timestamp or counter).
+6. **Price Precision**: Prices are in cents (multiply dollar amount by 100).
 7. **Amount Precision**: Check the base token decimals for correct amount formatting.
+8. **Thread Safety**: `LighterClient` is `Send + Sync` - safe to share across threads with `Arc`.
+9. **Parallel Execution**: Use `tokio::spawn` for parallel order execution in HFT scenarios.
+10. **Spot vs Perpetual**: Use correct market indices - spot markets have different indices than perpetuals.
 
 ## See Also
 
 - [Signer Library](./signer.md) - Transaction signing internals
 - [Getting Started Guide](./getting-started.md) - Quick start tutorial
-- [Examples](./examples.md) - Code examples
+- [Examples README](../api-client/examples/README.md) - Comprehensive examples guide
 

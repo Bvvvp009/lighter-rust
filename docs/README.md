@@ -8,7 +8,8 @@ Welcome to the Rust Signer documentation. This documentation covers all aspects 
 
 ## Running Examples
 
-- **[Running Examples](./running-examples.md)** - Comprehensive guide on how to run all available examples, including prerequisites, troubleshooting, and best practices
+- **[Examples README](../api-client/examples/README.md)** - Comprehensive guide for perpetual futures and spot trading examples
+- **[Running Examples](./running-examples.md)** - Guide on how to run all available examples, including prerequisites, troubleshooting, and best practices
 
 ## API Reference
 
@@ -25,6 +26,7 @@ Welcome to the Rust Signer documentation. This documentation covers all aspects 
 
 - **[Architecture](./architecture.md)** - System architecture, design decisions, and component overview
 - **[Code Examples](./examples.md)** - Practical code examples and usage patterns
+- **[Examples README](../api-client/examples/README.md)** - Complete guide to all 24 examples (perpetual futures, spot trading, HFT, etc.)
 
 ## Troubleshooting
 

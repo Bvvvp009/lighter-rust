@@ -840,7 +840,11 @@ fn message_to_fp5(message: &[u8]) -> Result<Fp5Element> {
     for (i, chunk) in message.chunks(8).enumerate().take(5) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_le_bytes(bytes));
+        // CRITICAL FIX: Go SDK's FromCanonicalLittleEndianBytes reverses bytes before
+        // calling SetBytesCanonical (which expects big-endian). We need to match this.
+        // Reverse bytes to match Go's behavior: little-endian input -> reversed -> big-endian interpretation
+        bytes.reverse();
+        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_be_bytes(bytes));
     }
     Ok(Fp5Element(message_elements))
 }

@@ -23,4 +23,21 @@ num-bigint = "0.4"
 default = []
 serde = ["dep:serde", "poseidon-hash/serde"]
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
+poseidon-hash = { path = "../poseidon-hash", version = "0.1.0" }
+
+[[bench]]
+name = "scalar_field"
+harness = false
+
+[[bench]]
+name = "schnorr"
+harness = false
+
+[[bench]]
+name = "poseidon_hash"
+harness = false
+
 

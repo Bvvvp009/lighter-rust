@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Use this if you know which markets have positions");
     
     // Method 2: Manual - specify markets
-    let market_indices = vec![0u8, 1u8, 2u8, 3u8]; // Add more market indices as needed
+    let market_indices = vec![0u8, 1u8, 2u8, 3u8]; // Market indices (u8)
 
     println!("  Closing positions in markets: {:?}", market_indices);
     println!("  This creates market orders with reduce_only=true for both directions");

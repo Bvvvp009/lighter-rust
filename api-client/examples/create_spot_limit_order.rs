@@ -1,10 +1,14 @@
-use api_client::LighterClient;
+use api_client::{LighterClient, CreateOrderRequest};
 use std::env;
 
+/// Example: Create a Spot Limit Order
+/// 
+/// Spot trading allows you to trade assets directly (buy/sell) without leverage.
+/// This example demonstrates how to create a limit order on a spot market.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "═".repeat(80));
-    println!("🚀 CREATE MARKET ORDER EXAMPLE");
+    println!("🪙 CREATE SPOT LIMIT ORDER EXAMPLE");
     println!("{}", "═".repeat(80));
     println!();
 
@@ -31,23 +35,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
 
-    // Create a market order
-    println!("📝 Creating market order...");
-    let response = client.create_market_order(
-        0,                    // order_book_index (0 = BTC-USD or ETH-USD)
-        12345,                // client_order_index (unique identifier)
-        1000,                 // base_amount (0.001 tokens in smallest unit)
-        349659,               // avg_execution_price (max price in cents)
-        false,                // is_ask (false = buy order)
-    ).await?;
+    // Create a spot limit order
+    // Note: Spot markets typically use different market indices than perpetual markets
+    // Check the API documentation for the correct spot market index
+    println!("📝 Creating spot limit order...");
+    let order = CreateOrderRequest {
+        account_index,
+        order_book_index: 0,      // Spot market index (check API docs for correct index)
+        client_order_index: 12345, // unique identifier
+        base_amount: 1000,         // Amount in smallest unit (e.g., wei for ETH)
+        price: 349659,             // Limit price in smallest unit (e.g., micro-USDC)
+        is_ask: false,             // false = buy order, true = sell order
+        order_type: 0,             // 0 = LimitOrder
+        time_in_force: 1,          // 1 = GoodTillTime (GTT)
+        reduce_only: false,        // Spot orders typically don't use reduce_only
+        trigger_price: 0,          // Not used for regular limit orders
+    };
 
-    println!("✅ Market order submitted!");
+    println!("  Order Details:");
+    println!("    Market Index: {}", order.order_book_index);
+    println!("    Side: {}", if order.is_ask { "Sell" } else { "Buy" });
+    println!("    Amount: {}", order.base_amount);
+    println!("    Price: {}", order.price);
+    println!("    Type: Limit Order");
+    println!("    Time in Force: Good Till Time");
+    println!();
+
+    let response = client.create_order(order).await?;
+
+    println!("✅ Spot limit order submitted!");
     println!("📥 Response:");
     println!("{}", serde_json::to_string_pretty(&response)?);
 
     let code = response["code"].as_i64().unwrap_or_default();
     if code == 200 {
-        println!("\n✅ Order created successfully!");
+        println!("\n✅ Spot order created successfully!");
         if let Some(tx_hash) = response["tx_hash"].as_str() {
             println!("  Transaction Hash: {}", tx_hash);
         }
@@ -60,3 +82,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+

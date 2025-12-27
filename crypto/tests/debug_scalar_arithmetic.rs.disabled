@@ -1,0 +1,69 @@
+//! Debug test to verify scalar arithmetic matches Go
+
+use goldilocks_crypto::{ScalarField, Point};
+use hex;
+
+#[test]
+fn test_scalar_arithmetic_verification() {
+    println!("\n=== Debug: Scalar Arithmetic Verification ===\n");
+    
+    // Generate test values
+    let k = ScalarField::sample_crypto();
+    let sk = ScalarField::sample_crypto();
+    
+    // Simulate e from hash (canonical form)
+    let e = ScalarField::sample_crypto();
+    
+    println!("Test values:");
+    println!("  k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("  sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    println!("  e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Compute s = k - e*sk (as done during signing)
+    let e_sk = e.mul(&sk);
+    println!("\ne*sk (Montgomery form): {}...", hex::encode(&e_sk.to_bytes_le()[..8]));
+    
+    let e_sk_canonical = e_sk.to_canonical();
+    println!("e*sk (canonical): {}...", hex::encode(&e_sk_canonical.to_bytes_le()[..8]));
+    
+    let s = k.sub(e_sk_canonical);
+    println!("s = k - e*sk (canonical): {}...", hex::encode(&s.to_bytes_le()[..8]));
+    
+    // Verify: k should equal s + e*sk
+    let k_reconstructed = s.add(e_sk_canonical);
+    println!("\n=== Verification ===");
+    println!("k (original): {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("k (reconstructed): {}...", hex::encode(&k_reconstructed.to_bytes_le()[..8]));
+    println!("k == k_reconstructed: {}", k.to_bytes_le() == k_reconstructed.to_bytes_le());
+    
+    // Now test point arithmetic
+    println!("\n=== Point Arithmetic ===");
+    let generator = Point::generator();
+    
+    // R from signing: k*G
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    println!("R from signing (k*G): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // R from verification: s*G + e*P where P = sk*G
+    let public_key = generator.mul(&sk);
+    let s_g = generator.mul(&s);
+    let e_pk = public_key.mul(&e);
+    let r_verification = s_g.add(&e_pk);
+    let r_verification_encoded = r_verification.encode();
+    println!("R from verification (s*G + e*P): {}", hex::encode(&r_verification_encoded.to_bytes_le()));
+    
+    println!("\nR match: {}", r_signing_encoded.to_bytes_le() == r_verification_encoded.to_bytes_le());
+    
+    // Also try with e in Montgomery form
+    println!("\n=== Testing with e in Montgomery form ===");
+    let e_montgomery = e.monty_mul(&ScalarField::R2);
+    let e_pk_montgomery = public_key.mul(&e_montgomery);
+    let r_verification_montgomery = s_g.add(&e_pk_montgomery);
+    let r_verification_montgomery_encoded = r_verification_montgomery.encode();
+    println!("R from verification (e in Montgomery): {}", hex::encode(&r_verification_montgomery_encoded.to_bytes_le()));
+    println!("R match (Montgomery e): {}", r_signing_encoded.to_bytes_le() == r_verification_montgomery_encoded.to_bytes_le());
+}
+
+
+

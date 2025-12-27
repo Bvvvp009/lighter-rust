@@ -1,0 +1,114 @@
+//! Check if R encoding for hash matches what Go uses
+
+use goldilocks_crypto::{ScalarField, Point, Fp5Element};
+use poseidon_hash::{hash_to_quintic_extension, Goldilocks};
+use hex;
+
+#[test]
+fn test_r_encoding_for_hash() {
+    println!("\n=== Testing R Encoding for Hash ===\n");
+    
+    // Use same test case
+    let private_key_hex = "01000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let message_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627";
+    
+    let private_key = hex::decode(private_key_hex).unwrap();
+    let message = hex::decode(message_hex).unwrap();
+    
+    // Use the actual Go signature from cross_validation.rs
+    let signature_hex = "f026eefe094088d8d21ebad69565715f7a8a1fe27e5a7c0401e5cbd384aa902953597975f447be70f2d89d958c99870fca816a00a4f61689bf7b98ed67a5837b151b342c6c556f56b4a6860a09b8410f";
+    let signature = hex::decode(signature_hex).unwrap();
+    let s = ScalarField::from_bytes_le(&signature[..40]).unwrap();
+    let e = ScalarField::from_bytes_le(&signature[40..]).unwrap();
+    
+    println!("Using Go signature:");
+    println!("  s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("  e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    println!("Signature from Rust signing:");
+    println!("  s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("  e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Reconstruct k from signature to get R that Go used
+    let generator = Point::generator();
+    let sk = ScalarField::from_bytes_le(&private_key).unwrap();
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let k = s.add(e_sk_canonical);
+    
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    
+    println!("\nR during signing (k*G, reconstructed from signature):");
+    println!("  k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("  Encoded: {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    println!("  As Fp5Element limbs: {:?}", r_signing_encoded.0.iter().map(|g| g.0).collect::<Vec<_>>());
+    
+    // During verification, we compute R as:
+    let sk = ScalarField::from_bytes_le(&private_key).unwrap();
+    let public_point = generator.mul(&sk);
+    let public_key_fp5 = public_point.encode();
+    let public_point_decoded = Point::decode(&public_key_fp5).unwrap();
+    
+    let e_adjusted = e.monty_mul(&ScalarField::ONE);
+    let r_verification = Point::mul_add2(&generator, &public_point_decoded, &s, &e_adjusted);
+    let r_verification_encoded = r_verification.encode();
+    
+    println!("\nR during verification (s*G + (e/R)*P):");
+    println!("  Encoded: {}", hex::encode(&r_verification_encoded.to_bytes_le()));
+    println!("  As Fp5Element limbs: {:?}", r_verification_encoded.0.iter().map(|g| g.0).collect::<Vec<_>>());
+    
+    // Compare
+    let r_matches = r_signing_encoded.0.iter().zip(r_verification_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0);
+    println!("\nR encoding matches: {}", r_matches);
+    
+    // Now check hash computation
+    // Convert message
+    let mut message_elements = [Goldilocks::zero(); 5];
+    for (i, chunk) in message.chunks(8).enumerate().take(5) {
+        let mut bytes = [0u8; 8];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        bytes.reverse();
+        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_be_bytes(bytes));
+    }
+    let message_fp5 = Fp5Element(message_elements);
+    
+    // Hash with R from signing
+    let mut pre_image_signing = [Goldilocks::zero(); 10];
+    pre_image_signing[..5].copy_from_slice(&r_signing_encoded.0);
+    pre_image_signing[5..].copy_from_slice(&message_fp5.0);
+    
+    let e_from_signing_r = hash_to_quintic_extension(&pre_image_signing);
+    let e_from_signing_r_scalar = ScalarField::from_fp5_element(&e_from_signing_r);
+    
+    println!("\nHash with R from signing:");
+    println!("  e (from signature): {}", hex::encode(&e.to_bytes_le()));
+    println!("  e' (computed): {}", hex::encode(&e_from_signing_r_scalar.to_bytes_le()));
+    println!("  Match: {}", e.0 == e_from_signing_r_scalar.0);
+    
+    // Hash with R from verification
+    let mut pre_image_verification = [Goldilocks::zero(); 10];
+    pre_image_verification[..5].copy_from_slice(&r_verification_encoded.0);
+    pre_image_verification[5..].copy_from_slice(&message_fp5.0);
+    
+    let e_from_verification_r = hash_to_quintic_extension(&pre_image_verification);
+    let e_from_verification_r_scalar = ScalarField::from_fp5_element(&e_from_verification_r);
+    
+    println!("\nHash with R from verification:");
+    println!("  e (from signature): {}", hex::encode(&e.to_bytes_le()));
+    println!("  e' (computed): {}", hex::encode(&e_from_verification_r_scalar.to_bytes_le()));
+    println!("  Match: {}", e.0 == e_from_verification_r_scalar.0);
+    
+    if e.0 == e_from_signing_r_scalar.0 {
+        println!("\n✅ Hash works with R from signing!");
+        println!("   This means R encoding is correct during signing.");
+        if !r_matches {
+            println!("   But R from verification doesn't match - this is the bug!");
+        }
+    } else {
+        println!("\n❌ Hash doesn't match even with R from signing!");
+        println!("   This means there's an issue with message encoding or hash function.");
+    }
+}
+

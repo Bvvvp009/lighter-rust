@@ -1,0 +1,71 @@
+//! Debug test to verify s computation matches Go
+
+use goldilocks_crypto::{ScalarField, Point};
+use hex;
+
+#[test]
+fn test_s_computation() {
+    println!("\n=== Debug: s Computation ===\n");
+    
+    // Simulate signing process
+    let k = ScalarField::sample_crypto();
+    let sk = ScalarField::sample_crypto();
+    let e = ScalarField::sample_crypto();
+    
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Compute s = k - e*sk (as done in signing)
+    // Go: S: k.Sub(e.Mul(sk))
+    // e.Mul(sk) returns Montgomery form, but k is canonical
+    // Go's Sub handles this correctly
+    
+    let e_sk = e.mul(&sk); // Returns Montgomery form
+    println!("e*sk (Montgomery): {}...", hex::encode(&e_sk.to_bytes_le()[..8]));
+    
+    // In Go, k.Sub(e.Mul(sk)) - both are treated as scalars, Sub handles the form
+    // In Rust, we need to ensure both are in the same form
+    // Since k is canonical and e*sk is Montgomery, we need to convert one
+    // Go's Sub just does raw subtraction, so it should work with any form
+    // But let's check what happens if we convert e*sk to canonical first
+    let e_sk_canonical = e_sk.to_canonical();
+    println!("e*sk (canonical): {}...", hex::encode(&e_sk_canonical.to_bytes_le()[..8]));
+    
+    let s_canonical = k.sub(e_sk_canonical);
+    println!("s = k - e*sk (canonical): {}...", hex::encode(&s_canonical.to_bytes_le()[..8]));
+    
+    // Also try without conversion (as Go might do)
+    let s_montgomery = k.sub(e_sk);
+    println!("s = k - e*sk (Montgomery): {}...", hex::encode(&s_montgomery.to_bytes_le()[..8]));
+    
+    // Verify: k should equal s + e*sk
+    println!("\n=== Verification ===");
+    let k_reconstructed_canonical = s_canonical.add(e_sk_canonical);
+    println!("k (original): {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("k (reconstructed, canonical): {}...", hex::encode(&k_reconstructed_canonical.to_bytes_le()[..8]));
+    println!("k == k_reconstructed (canonical): {}", k.to_bytes_le() == k_reconstructed_canonical.to_bytes_le());
+    
+    let k_reconstructed_montgomery = s_montgomery.add(e_sk);
+    println!("k (reconstructed, Montgomery): {}...", hex::encode(&k_reconstructed_montgomery.to_bytes_le()[..8]));
+    println!("k == k_reconstructed (Montgomery): {}", k.to_bytes_le() == k_reconstructed_montgomery.to_bytes_le());
+    
+    // Test point arithmetic with both forms
+    println!("\n=== Point Arithmetic Test ===");
+    let generator = Point::generator();
+    
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    println!("R from signing (k*G): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // Test with s in canonical form
+    let s_g_canonical = generator.mul(&s_canonical);
+    let e_sk_g_canonical = generator.mul(&e_sk_canonical);
+    let r_verification_canonical = s_g_canonical.add(&e_sk_g_canonical);
+    let r_verification_canonical_encoded = r_verification_canonical.encode();
+    println!("R from verification (s*G + e*sk*G, canonical): {}", hex::encode(&r_verification_canonical_encoded.to_bytes_le()));
+    println!("R match (canonical): {}", r_signing_encoded.to_bytes_le() == r_verification_canonical_encoded.to_bytes_le());
+}
+
+
+

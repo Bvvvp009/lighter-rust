@@ -32,7 +32,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use goldilocks_crypto::{ScalarField, Point, sign_with_nonce, verify_signature};
+//! use goldilocks_crypto::{ScalarField, Point, sign, verify_signature};
 //!
 //! // Generate a random private key
 //! let private_key = ScalarField::sample_crypto();
@@ -42,11 +42,9 @@
 //! let public_key = Point::generator().mul(&private_key);
 //! let public_key_bytes = public_key.encode().to_bytes_le();
 //!
-//! // Sign a message
+//! // Sign a message (nonce is generated internally)
 //! let message = [0u8; 40];
-//! let nonce = ScalarField::sample_crypto();
-//! let nonce_bytes = nonce.to_bytes_le();
-//! let signature = sign_with_nonce(&private_key_bytes, &message, &nonce_bytes).unwrap();
+//! let signature = sign(&private_key_bytes, &message).unwrap();
 //!
 //! // Verify signature
 //! let is_valid = verify_signature(&signature, &message, &public_key_bytes).unwrap();
@@ -57,13 +55,25 @@
 
 pub mod schnorr;
 pub mod scalar_field;
+pub mod batch_verify;
 
 pub use scalar_field::ScalarField;
 
 pub use poseidon_hash::{Goldilocks, Fp5Element};
 
 // Re-export Schnorr functions
-pub use schnorr::{sign_with_nonce, verify_signature, validate_public_key, Point};
+pub use schnorr::{sign, verify_signature, validate_public_key, sign_hashed_message, Point};
+pub use batch_verify::batch_verify;
+// WeierstrassPoint will be added when needed - for now using Point::mul_add2 for verification
+pub type WeierstrassPoint = Point;
+
+// Expose sign_with_nonce for testing and benchmarking
+#[cfg(any(test, feature = "test-utils"))]
+pub use schnorr::sign_with_nonce;
+
+// Also expose for benchmarks (which are compiled in release mode)
+#[cfg(not(any(test, feature = "test-utils")))]
+pub(crate) use schnorr::sign_with_nonce as _sign_with_nonce_internal;
 
 use thiserror::Error;
 

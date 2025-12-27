@@ -1,0 +1,57 @@
+//! Debug test to verify e*sk computation
+
+use goldilocks_crypto::{ScalarField, Point};
+use hex;
+
+#[test]
+fn test_e_sk_computation() {
+    println!("\n=== Debug: e*sk Computation ===\n");
+    
+    // Use values from actual signing
+    let k = ScalarField::sample_crypto();
+    let sk = ScalarField::sample_crypto();
+    let e = ScalarField::sample_crypto();
+    
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Compute e*sk using mul() (returns Montgomery form)
+    let e_sk_montgomery = e.mul(&sk);
+    println!("\ne*sk (Montgomery): {}...", hex::encode(&e_sk_montgomery.to_bytes_le()[..8]));
+    
+    // Convert to canonical
+    let e_sk_canonical = e_sk_montgomery.to_canonical();
+    println!("e*sk (canonical): {}...", hex::encode(&e_sk_canonical.to_bytes_le()[..8]));
+    
+    // Compute s = k - e*sk_canonical
+    let s = k.sub(e_sk_canonical);
+    println!("s = k - e*sk_canonical: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    
+    // Verify: k should equal s + e*sk_canonical
+    let k_reconstructed = s.add(e_sk_canonical);
+    println!("\n=== Verification ===");
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("k_reconstructed: {}...", hex::encode(&k_reconstructed.to_bytes_le()[..8]));
+    println!("k == k_reconstructed: {}", k.to_bytes_le() == k_reconstructed.to_bytes_le());
+    
+    // Also test: what if we don't convert e*sk to canonical?
+    println!("\n=== Testing without canonical conversion ===");
+    let s_no_convert = k.sub(e_sk_montgomery);
+    println!("s = k - e*sk (Montgomery): {}...", hex::encode(&s_no_convert.to_bytes_le()[..8]));
+    let k_reconstructed_no_convert = s_no_convert.add(e_sk_montgomery);
+    println!("k_reconstructed (no convert): {}...", hex::encode(&k_reconstructed_no_convert.to_bytes_le()[..8]));
+    println!("k == k_reconstructed (no convert): {}", k.to_bytes_le() == k_reconstructed_no_convert.to_bytes_le());
+    
+    // Test: what if we use e*sk in Montgomery form but convert k to Montgomery first?
+    println!("\n=== Testing with k in Montgomery form ===");
+    let k_montgomery = k.monty_mul(&ScalarField::R2);
+    let s_montgomery = k_montgomery.sub(e_sk_montgomery);
+    let k_reconstructed_montgomery = s_montgomery.add(e_sk_montgomery);
+    let k_reconstructed_canonical = k_reconstructed_montgomery.to_canonical();
+    println!("k_reconstructed (Montgomery approach): {}...", hex::encode(&k_reconstructed_canonical.to_bytes_le()[..8]));
+    println!("k == k_reconstructed (Montgomery approach): {}", k.to_bytes_le() == k_reconstructed_canonical.to_bytes_le());
+}
+
+
+

@@ -1,0 +1,43 @@
+//! Debug test to verify mul_add2() works correctly
+
+use goldilocks_crypto::{ScalarField, Point};
+use hex;
+
+#[test]
+fn test_weierstrass_mul_add2() {
+    println!("\n=== Debug: Point::mul_add2() ===\n");
+    
+    let generator = Point::generator();
+    let sk = ScalarField::sample_crypto();
+    let e = ScalarField::sample_crypto();
+    
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Compute k = s + e*sk (simulate what we'd have during verification)
+    // First, let's compute what s would be
+    let k = ScalarField::sample_crypto();
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let s = k.sub(e_sk_canonical);
+    
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    
+    // Compute R from signing: k*G
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    println!("\nR from signing (k*G): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // Compute R from verification using Point::mul_add2
+    let public_key = generator.mul(&sk);
+    let public_key_encoded = public_key.encode();
+    println!("Public key (Point): {}...", hex::encode(&public_key_encoded.to_bytes_le()[..16]));
+    
+    // Test with s and e in canonical form
+    println!("\n=== Testing with s and e in canonical form ===");
+    let r_verification = Point::mul_add2(&generator, &public_key, &s, &e);
+    let r_verification_encoded = r_verification.encode();
+    println!("R from verification (Point): {}", hex::encode(&r_verification_encoded.to_bytes_le()));
+    println!("R match: {}", r_signing_encoded.to_bytes_le() == r_verification_encoded.to_bytes_le());
+}

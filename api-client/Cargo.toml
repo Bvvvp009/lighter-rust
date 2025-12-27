@@ -7,7 +7,7 @@ edition = "2021"
 signer = { path = "../signer" }
 goldilocks-crypto = { path = "../crypto" }
 poseidon-hash = { path = "../poseidon-hash" }
-reqwest = { workspace = true, features = ["multipart"] }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -16,7 +16,6 @@ hex = { workspace = true }
 base64 = "0.21"
 dotenv = "0.15"
 rand = "0.8"
-futures = "0.3"
 
 [[example]]
 name = "create_market_order"
@@ -43,71 +42,14 @@ name = "setup_api_key"
 path = "examples/setup_api_key.rs"
 
 [[example]]
+name = "create_sl_tp"
+path = "examples/create_sl_tp.rs"
+
+[[example]]
 name = "transfer_update_leverage"
 path = "examples/transfer_update_leverage.rs"
 
 [[example]]
 name = "send_tx_batch"
 path = "examples/send_tx_batch.rs"
-
-[[example]]
-name = "close_all_positions"
-path = "examples/close_all_positions.rs"
-
-
-[[example]]
-name = "create_market_order_otoco"
-path = "examples/create_market_order_otoco.rs"
-
-[[example]]
-name = "create_limit_order_otoco"
-path = "examples/create_limit_order_otoco.rs"
-
-[[example]]
-name = "create_twap_order"
-path = "examples/create_twap_order.rs"
-
-[[example]]
-name = "close_position_otoco"
-path = "examples/close_position_otoco.rs"
-
-[[example]]
-name = "cancel_order_otoco"
-path = "examples/cancel_order_otoco.rs"
-
-[[example]]
-name = "withdraw_l2"
-path = "examples/withdraw_l2.rs"
-
-[[example]]
-name = "hft_multi_client"
-path = "examples/hft_multi_client.rs"
-
-[[example]]
-name = "create_spot_limit_order"
-path = "examples/create_spot_limit_order.rs"
-
-[[example]]
-name = "create_spot_market_order"
-path = "examples/create_spot_market_order.rs"
-
-[[example]]
-name = "spot_trading_basics"
-path = "examples/spot_trading_basics.rs"
-
-[[example]]
-name = "create_sl_tp"
-path = "examples/create_sl_tp.rs"
-
-[[example]]
-name = "create_modify_cancel_order"
-path = "examples/create_modify_cancel_order.rs"
-
-[[example]]
-name = "create_grouped_ioc_with_attached_sl_tp"
-path = "examples/create_grouped_ioc_with_attached_sl_tp.rs"
-
-[[example]]
-name = "create_position_tied_sl_tp"
-path = "examples/create_position_tied_sl_tp.rs"
 

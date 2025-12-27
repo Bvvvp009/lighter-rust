@@ -1,0 +1,42 @@
+//! Debug test to verify sub() implementation
+
+use goldilocks_crypto::ScalarField;
+use hex;
+
+#[test]
+fn test_sub_implementation() {
+    println!("\n=== Debug: Sub Implementation ===\n");
+    
+    // Test with simple values
+    let k = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 10; // k = 10
+        bytes
+    }).unwrap();
+    
+    let e_sk = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 3; // e*sk = 3
+        bytes
+    }).unwrap();
+    
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("e*sk: {}...", hex::encode(&e_sk.to_bytes_le()[..8]));
+    
+    // Compute s = k - e*sk
+    let s = k.sub(e_sk);
+    println!("s = k - e*sk: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    
+    // Reconstruct: k_reconstructed = s + e*sk
+    let k_reconstructed = s.add(e_sk);
+    println!("k_reconstructed = s + e*sk: {}...", hex::encode(&k_reconstructed.to_bytes_le()[..8]));
+    
+    println!("\nk == k_reconstructed: {}", k.to_bytes_le() == k_reconstructed.to_bytes_le());
+    
+    // Expected: s = 10 - 3 = 7, k_reconstructed = 7 + 3 = 10
+    println!("Expected s = 7, got: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("Expected k_reconstructed = 10, got: {}...", hex::encode(&k_reconstructed.to_bytes_le()[..8]));
+}
+
+
+

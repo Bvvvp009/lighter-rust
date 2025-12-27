@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         order_type: 0, // LIMIT
         time_in_force: 1, // GOOD_TILL_TIME
         reduce_only: false,
-        trigger_price: 0, // Will be set by API for GoodTillTime orders
+        trigger_price: 0,
     };
 
     let ask_response = client.create_order_with_nonce(ask_order, Some(current_nonce)).await?;
@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         order_type: 0, // LIMIT
         time_in_force: 1, // GOOD_TILL_TIME
         reduce_only: false,
-        trigger_price: 0, // Will be set by API for GoodTillTime orders
+        trigger_price: 0,
     };
 
     let bid_response = client.create_order_with_nonce(bid_order, Some(current_nonce)).await?;
@@ -122,5 +122,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
 

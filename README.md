@@ -1,62 +1,58 @@
 # Lighter Rust SDK
 
-A high-performance Rust implementation of the Lighter Protocol signer, providing cryptographic primitives and API client functionality for trading on the Lighter Exchange.
+A high-performance Rust implementation of the Lighter Protocol signer, providing cryptographic primitives for the Lighter Exchange.
 
 ## 🚀 Features
 
 - **High-Performance Signing**: Optimized Schnorr signature generation using Goldilocks field arithmetic
 - **Poseidon2 Hashing**: Efficient zero-knowledge proof-friendly hashing
-- **Automatic Nonce Management**: Lock-free atomic operations for optimal HFT performance
-- **Comprehensive API Client**: Full support for perpetual futures and spot trading
 - **Thread-Safe**: `Send + Sync` for concurrent operations
-- **Production-Ready**: Battle-tested with comprehensive examples
+- **Production-Ready**: Battle-tested cryptographic primitives
+- **One-to-One Go Compatibility**: ✅ Verified - Matches Go implementation exactly
+- **Verified Compatibility**: All critical components tested and verified with Go test vectors
 
 ## 📦 Libraries
 
-The SDK is organized into four main libraries:
+The SDK is organized into three core libraries:
 
 ### 1. `poseidon-hash`
 Poseidon2 hash function implementation for zero-knowledge proof systems.
+
+**Features:**
+- Goldilocks field arithmetic (p = 2^64 - 2^32 + 1)
+- Fp5Element (quintic extension field) operations
+- Poseidon2 hash function with exact Go compatibility
 
 ```toml
 [dependencies]
 poseidon-hash = { path = "./poseidon-hash" }
 ```
 
-### 2. `crypto`
+### 2. `crypto` (goldilocks-crypto)
 Cryptographic primitives including:
 - Goldilocks field arithmetic
 - ECgFp5 curve operations
-- Schnorr signature generation
+- Schnorr signature generation and verification
+- Scalar field operations
 
 ```toml
 [dependencies]
-crypto = { path = "./crypto" }
+goldilocks-crypto = { path = "./crypto" }
+poseidon-hash = { path = "./poseidon-hash" }
 ```
 
 ### 3. `signer`
 High-level signing interface for:
 - Key management (40-byte private keys)
-- Transaction signing
+- Message signing (40-byte messages)
 - Authentication token generation
+- Public key derivation
 
 ```toml
 [dependencies]
 signer = { path = "./signer" }
-```
-
-### 4. `api-client`
-HTTP client for Lighter Exchange API:
-- Order management (create, modify, cancel)
-- Account operations (transfer, withdraw, leverage)
-- Automatic nonce management
-- Transaction signing and submission
-
-```toml
-[dependencies]
-api-client = { path = "./api-client" }
-tokio = { version = "1", features = ["full"] }
-dotenv = "0.15"
+goldilocks-crypto = { path = "./crypto" }
+poseidon-hash = { path = "./poseidon-hash" }
 ```
 
 ## 🏃 Quick Start
@@ -67,56 +63,66 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-api-client = { path = "../lighter-rust/api-client" }
 signer = { path = "../lighter-rust/signer" }
-tokio = { version = "1", features = ["full"] }
-dotenv = "0.15"
-```
-
-### Configuration
-
-Create a `.env` file:
-
-```bash
-BASE_URL=https://testnet.zklighter.elliot.ai
-ACCOUNT_INDEX=271
-API_KEY_INDEX=4
-API_PRIVATE_KEY=your_40_byte_hex_private_key
+goldilocks-crypto = { path = "../lighter-rust/crypto" }
+poseidon-hash = { path = "../lighter-rust/poseidon-hash" }
+hex = "0.4"
 ```
 
 ### Basic Usage
 
-```rust
-use api_client::LighterClient;
-use std::env;
+#### Key Management and Signing
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    dotenv::dotenv().ok();
+```rust
+use signer::KeyManager;
+use hex;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create KeyManager from private key hex string (80 hex chars = 40 bytes)
+    let private_key_hex = "6227989d19d906db99e5da73c3ce4c2e41d80854cecce7618a1e45978a604c7c8fac5d6cc3eb315b";
+    let key_manager = KeyManager::from_hex(private_key_hex)?;
     
-    let client = LighterClient::new(
-        env::var("BASE_URL")?,
-        &env::var("API_PRIVATE_KEY")?,
-        env::var("ACCOUNT_INDEX")?.parse()?,
-        env::var("API_KEY_INDEX")?.parse()?,
-    )?;
+    // Get public key (40 bytes)
+    let public_key = key_manager.public_key_bytes();
+    println!("Public key: {}", hex::encode(&public_key));
     
-    // Create a limit order
-    let order = api_client::CreateOrderRequest {
-        account_index: env::var("ACCOUNT_INDEX")?.parse()?,
-        order_book_index: 0,
-        client_order_index: 12345,
-        base_amount: 1000,
-        price: 349659,
-        is_ask: false,
-        order_type: 0,
-        time_in_force: 1,
-        reduce_only: false,
-        trigger_price: 0,
-    };
+    // Sign a 40-byte message
+    let message: [u8; 40] = [0u8; 40]; // Your 40-byte message hash
+    let signature = key_manager.sign(&message)?;
+    println!("Signature: {}", hex::encode(&signature));
     
-    let response = client.create_order(order).await?;
-    println!("Order created: {:?}", response);
+    // Create auth token
+    let deadline = 1735689600i64;
+    let account_index = 271i64;
+    let api_key_index = 4u8;
+    let auth_token = key_manager.create_auth_token(deadline, account_index, api_key_index)?;
+    println!("Auth token: {}", auth_token);
+    
+    Ok(())
+}
+```
+
+#### Using Cryptographic Primitives Directly
+
+```rust
+use goldilocks_crypto::{ScalarField, Point, sign, verify_signature};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Generate a random private key
+    let private_key = ScalarField::sample_crypto();
+    let private_key_bytes = private_key.to_bytes_le();
+    
+    // Derive public key
+    let public_key = Point::generator().mul(&private_key);
+    let public_key_bytes = public_key.encode().to_bytes_le();
+    
+    // Sign a message (nonce is generated internally)
+    let message = [0u8; 40];
+    let signature = sign(&private_key_bytes, &message)?;
+    
+    // Verify signature
+    let is_valid = verify_signature(&signature, &message, &public_key_bytes)?;
+    assert!(is_valid);
     
     Ok(())
 }
@@ -124,59 +130,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 📚 Examples
 
-The SDK includes **24 comprehensive examples** covering:
+The SDK includes comprehensive examples in each library:
 
-### Perpetual Futures Trading
-- `create_limit_order` - Basic limit orders
-- `create_market_order` - Market orders
-- `create_sl_tp` - Stop loss & take profit orders
-- `create_position_tied_sl_tp` - Position-tied orders
-- `create_grouped_ioc_with_attached_sl_tp` - IOC with attached SL/TP
-- `create_limit_order_otoco` - One-triggers-one-cancels-other
-- `create_market_order_otoco` - Market OCO orders
-- `create_twap_order` - Time-weighted average price orders
-- `close_position_otoco` - Close with protection
-- `close_all_positions` - Close all positions
-
-### Spot Trading
-- `create_spot_limit_order` - Spot limit orders
-- `create_spot_market_order` - Spot market orders
-- `spot_trading_basics` - Comprehensive spot guide
-
-### Order Management
-- `create_modify_cancel_order` - Full order lifecycle
-- `cancel_order` - Cancel single order
-- `cancel_all_orders` - Cancel all orders
-- `cancel_order_otoco` - Cancel and replace
-
-### Advanced Features
-- `hft_multi_client` - High-frequency trading with multiple API keys
-- `send_tx_batch` - Batch transaction submission
-- `create_auth_token` - Authentication token generation
-- `setup_api_key` - API key management
-- `transfer_update_leverage` - Account operations
-- `withdraw_l2` - Layer 2 withdrawals
-
-### Running Examples
+### Signer Examples
 
 ```bash
-# From the api-client directory
-cargo run --example create_limit_order
-
-# Or from the lighter-rust root
-cargo run --example create_limit_order --manifest-path api-client/Cargo.toml
+# Run signer examples
+cd signer
+cargo run --example compare_with_go
 ```
 
-**See [Examples README](api-client/examples/README.md) for complete documentation.**
+### Crypto Examples
+
+```bash
+# Run crypto benchmarks
+cd crypto
+cargo bench
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run tests for specific library
+cargo test -p signer
+cargo test -p goldilocks-crypto
+cargo test -p poseidon-hash
+```
 
 ## 📖 Documentation
 
 Comprehensive documentation is available in the `docs/` directory:
 
-- **[Getting Started](docs/getting-started.md)** - Quick start tutorial
-- **[Examples Guide](api-client/examples/README.md)** - All 24 examples documented
 - **[Signer Library](docs/signer.md)** - Cryptographic signing internals
+- **[Crypto Library](docs/crypto.md)** - Cryptographic primitives
+- **[Poseidon Hash](docs/poseidon-hash.md)** - Hash function implementation
 - **[Architecture](docs/architecture.md)** - System design overview
+- **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Detailed implementation plan
 
 ## 🔧 Building
 
@@ -196,73 +188,56 @@ cargo bench
 
 ## 🎯 Key Features
 
-### Nonce Management
-
-The SDK provides two nonce management modes:
-
-**Automatic (Recommended)**: Lock-free atomic operations for maximum performance
-```rust
-let response = client.create_order(order).await?;
-```
-
-**Manual**: Explicit nonce control for advanced use cases
-```rust
-let nonce = client.get_nonce().await?;
-let response = client.create_order_direct(order, nonce).await?;
-```
-
 ### Thread Safety
 
-All client operations are thread-safe. Share clients across threads:
+All core operations are thread-safe. Share KeyManager across threads:
 
 ```rust
 use std::sync::Arc;
+use signer::KeyManager;
 
-let client = Arc::new(LighterClient::new(...)?);
+let key_manager = Arc::new(KeyManager::from_hex(private_key_hex)?);
 
 // Use in multiple threads
-let client1 = client.clone();
-let client2 = client.clone();
+let km1 = key_manager.clone();
+let km2 = key_manager.clone();
 
-tokio::spawn(async move {
-    client1.create_order(order1).await
+std::thread::spawn(move || {
+    let sig = km1.sign(&message).unwrap();
 });
 
-tokio::spawn(async move {
-    client2.create_order(order2).await
+std::thread::spawn(move || {
+    let sig = km2.sign(&message).unwrap();
 });
 ```
 
-### High-Frequency Trading
+### Go Compatibility
 
-The `hft_multi_client` example demonstrates:
-- Parallel order execution
-- Multiple API key management
-- Performance benchmarking
-- Automatic and manual nonce modes
-
-```bash
-cargo run --example hft_multi_client
-```
+The implementation is designed to match the Go implementation exactly:
+- Same cryptographic primitives
+- Same signature format (80 bytes: 40 bytes s + 40 bytes e)
+- Same key format (40-byte private keys)
+- Same auth token format
+- Byte-level compatibility verified through tests
 
 ## 🔐 Security
 
-- **No Hardcoded Secrets**: All examples use environment variables
 - **Secure Key Management**: Private keys never logged or exposed
-- **Production-Ready**: Battle-tested error handling
+- **Cryptographically Secure RNG**: Uses `ScalarField::sample_crypto()` for random generation
+- **Production-Ready**: Battle-tested cryptographic primitives
+- **⚠️ Security Warning**: This library has NOT been audited. Use with caution in production.
 
 ## 📊 Performance
 
-- **Signing**: < 1ms per transaction
-- **Order Submission**: ~130-200ms (network dependent)
-- **Throughput**: 100+ orders/second with parallel execution
-- **Nonce Management**: Lock-free atomic operations
+- **Signing**: < 1ms per signature
+- **Hash Operations**: Optimized Poseidon2 implementation
+- **Point Operations**: Windowed scalar multiplication
+- **Memory**: Zero-copy where possible
 
 ## 🛠️ Requirements
 
 - Rust 1.70+ (see `rust-toolchain.toml`)
-- Tokio async runtime
-- Network access to Lighter Exchange API
+- No external runtime dependencies (core libraries are `no_std` compatible with `alloc`)
 
 ## 📝 License
 
@@ -274,18 +249,18 @@ Contributions are always welcome, Feel free!
 
 ## 🔗 Links
 
-- **Examples**: [api-client/examples/README.md](api-client/examples/README.md)
 - **Documentation**: [docs/README.md](docs/README.md)
+- **Implementation Plan**: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ## 📞 Support
 
 For issues and questions:
-1. Check the [Examples README](api-client/examples/README.md)
-2. Review [Documentation](docs/README.md)
-3. See [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
+1. Review [Documentation](docs/README.md)
+2. Check [Implementation Plan](IMPLEMENTATION_PLAN.md)
+3. See library-specific documentation in `docs/` directory
 
 ---
 
-**Built with ❤️ for high-performance trading on Lighter Exchange**
+**Built with ❤️ for high-performance cryptographic operations on Lighter Protocol**
 

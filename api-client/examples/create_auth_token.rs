@@ -22,10 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
 
-    // Create auth token with maximum expiry (8 hours = 28800 seconds)
+    // Create auth token with default expiry (7 hours = 25200 seconds)
     println!("📝 Creating auth token...");
-    let max_expiry_seconds = 8 * 60 * 60; // 8 hours (maximum allowed)
-    let token = client.create_auth_token(max_expiry_seconds)?;
+    let default_expiry_seconds = 7 * 60 * 60; // 7 hours
+    let token = client.create_auth_token(default_expiry_seconds)?;
 
     println!("✅ Auth token created!");
     println!();
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", token);
     println!();
     println!("📝 Token Format: deadline:account_index:api_key_index:signature");
-    println!("  Expiry: {} seconds ({} hours) - Maximum allowed", max_expiry_seconds, max_expiry_seconds / 3600);
+    println!("  Expiry: {} seconds ({} hours)", default_expiry_seconds, default_expiry_seconds / 3600);
 
     // Example: Create a short-lived token (10 minutes)
     println!();

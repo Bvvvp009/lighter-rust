@@ -1,0 +1,78 @@
+//! Debug test: Compare mul_add2 with direct computation s*G + e*sk*G
+
+use goldilocks_crypto::{ScalarField, Point};
+use hex;
+
+#[test]
+fn test_mul_add2_vs_direct() {
+    println!("\n=== Debug: mul_add2 vs Direct Computation ===\n");
+    
+    let generator = Point::generator();
+    
+    let k = ScalarField::sample_crypto();
+    let sk = ScalarField::sample_crypto();
+    let e = ScalarField::sample_crypto();
+    
+    println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Compute s
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let s = k.sub(e_sk_canonical);
+    
+    println!("s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    
+    // R from signing: k*G
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    println!("\nR from signing (k*G): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // Method 1: Direct computation s*G + e*sk*G (we know this works)
+    let s_g = generator.mul(&s);
+    let e_sk_g = generator.mul(&e_sk_canonical);
+    let r_direct = s_g.add(&e_sk_g);
+    let r_direct_encoded = r_direct.encode();
+    println!("R direct (s*G + e*sk*G): {}", hex::encode(&r_direct_encoded.to_bytes_le()));
+    println!("R signing == R direct: {}", r_signing_encoded.to_bytes_le() == r_direct_encoded.to_bytes_le());
+    
+    // Method 2: Using Point::mul_add2 with generator and generator (s*G + e*sk*G)
+    // This should be equivalent to direct computation
+    let r_mul_add2_point = Point::mul_add2(&generator, &generator, &s, &e_sk_canonical);
+    let r_mul_add2_point_encoded = r_mul_add2_point.encode();
+    println!("R Point::mul_add2 (G, G, s, e*sk): {}", hex::encode(&r_mul_add2_point_encoded.to_bytes_le()));
+    println!("R signing == R Point::mul_add2: {}", r_signing_encoded.to_bytes_le() == r_mul_add2_point_encoded.to_bytes_le());
+    
+    // Method 3: Using public key P = sk*G
+    println!("\n=== Using Public Key P = sk*G ===");
+    let public_key = generator.mul(&sk);
+    let public_key_encoded = public_key.encode();
+    println!("Public key: {}", hex::encode(&public_key_encoded.to_bytes_le()));
+    
+    // Using Point: s*G + e*P
+    let s_g2 = generator.mul(&s);
+    let e_p = public_key.mul(&e);
+    let r_with_pk_point = s_g2.add(&e_p);
+    let r_with_pk_point_encoded = r_with_pk_point.encode();
+    println!("R Point (s*G + e*P): {}", hex::encode(&r_with_pk_point_encoded.to_bytes_le()));
+    println!("R signing == R Point (with P): {}", r_signing_encoded.to_bytes_le() == r_with_pk_point_encoded.to_bytes_le());
+    
+    // Using Point::mul_add2: s*G + e*P
+    let r_with_pk_mul_add2 = Point::mul_add2(&generator, &public_key, &s, &e);
+    let r_with_pk_mul_add2_encoded = r_with_pk_mul_add2.encode();
+    println!("R Point::mul_add2 (G, P, s, e): {}", hex::encode(&r_with_pk_mul_add2_encoded.to_bytes_le()));
+    println!("R signing == R Point::mul_add2 (with P): {}", r_signing_encoded.to_bytes_le() == r_with_pk_mul_add2_encoded.to_bytes_le());
+    
+    // Key insight: Can we compute e*sk first, then use that?
+    println!("\n=== Using e*sk directly ===");
+    // We want: s*G + e*P where P = sk*G
+    // This should equal: s*G + e*sk*G = (s + e*sk)*G = k*G
+    // But e*P != e*sk*G due to representation issues
+    // What if we compute e*sk first, then use that in mul_add2?
+    let r_using_esk = Point::mul_add2(&generator, &generator, &s, &e_sk_canonical);
+    let r_using_esk_encoded = r_using_esk.encode();
+    println!("R Point::mul_add2 (G, G, s, e*sk): {}", hex::encode(&r_using_esk_encoded.to_bytes_le()));
+    println!("R signing == R Point::mul_add2 (using e*sk): {}", r_signing_encoded.to_bytes_le() == r_using_esk_encoded.to_bytes_le());
+
+

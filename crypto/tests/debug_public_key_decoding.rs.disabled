@@ -1,0 +1,87 @@
+//! Debug test to verify public key decoding matches Go
+
+use goldilocks_crypto::{ScalarField, Point, WeierstrassPoint, Fp5Element};
+use hex;
+
+#[test]
+fn test_public_key_decoding() {
+    println!("\n=== Debug: Public Key Decoding ===\n");
+    
+    let generator = Point::generator();
+    let sk = ScalarField::sample_crypto();
+    
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    
+    // Compute public key using Point
+    let public_key_point = generator.mul(&sk);
+    let public_key_encoded = public_key_point.encode();
+    println!("Public key (Point, encoded): {}", hex::encode(&public_key_encoded.to_bytes_le()));
+    
+    // Decode to WeierstrassPoint
+    let public_key_fp5 = Fp5Element::from_bytes_le(&public_key_encoded.to_bytes_le()).unwrap();
+    let public_key_ws = WeierstrassPoint::decode_fp5_as_weierstrass(&public_key_fp5);
+    
+    match public_key_ws {
+        Some(pk_ws) => {
+            let pk_ws_encoded = pk_ws.encode();
+            println!("Public key (WeierstrassPoint, encoded): {}", hex::encode(&pk_ws_encoded.to_bytes_le()));
+            println!("Encodings match: {}", public_key_encoded.to_bytes_le() == pk_ws_encoded.to_bytes_le());
+            
+            // Test: e*P using WeierstrassPoint
+            let e = ScalarField::sample_crypto();
+            println!("\ne: {}...", hex::encode(&e.to_bytes_le()[..8]));
+            
+            // Compute e*P using Point
+            let e_pk_point = public_key_point.mul(&e);
+            let e_pk_point_encoded = e_pk_point.encode();
+            println!("e*P (using Point): {}", hex::encode(&e_pk_point_encoded.to_bytes_le()));
+            
+            // Compute e*P using WeierstrassPoint (we need to implement mul for WeierstrassPoint)
+            // For now, let's test if we can compute e*sk*G and compare
+            let e_sk = e.mul(&sk);
+            let e_sk_canonical = e_sk.to_canonical();
+            let e_sk_g = generator.mul(&e_sk_canonical);
+            let e_sk_g_encoded = e_sk_g.encode();
+            println!("e*sk*G (using Point): {}", hex::encode(&e_sk_g_encoded.to_bytes_le()));
+            println!("e*P == e*sk*G: {}", e_pk_point_encoded.to_bytes_le() == e_sk_g_encoded.to_bytes_le());
+            
+            // Test mul_add2: s*G + e*P
+            let k = ScalarField::sample_crypto();
+            let e_sk_canonical = e.mul(&sk).to_canonical();
+            let s = k.sub(e_sk_canonical);
+            
+            println!("\n=== Testing mul_add2 ===");
+            println!("k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+            println!("s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+            
+            // R from signing: k*G
+            let r_signing = generator.mul(&k);
+            let r_signing_encoded = r_signing.encode();
+            println!("R from signing (k*G): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+            
+            // R from verification using WeierstrassPoint::mul_add2
+            let generator_ws = WeierstrassPoint::GENERATOR;
+            let r_verification_ws = WeierstrassPoint::mul_add2(&generator_ws, &pk_ws, &s, &e);
+            let r_verification_ws_encoded = r_verification_ws.encode();
+            println!("R from verification (WeierstrassPoint::mul_add2): {}", hex::encode(&r_verification_ws_encoded.to_bytes_le()));
+            
+            // Also compute using Point: s*G + e*P
+            let s_g = generator.mul(&s);
+            let e_pk = public_key_point.mul(&e);
+            let r_verification_point = s_g.add(&e_pk);
+            let r_verification_point_encoded = r_verification_point.encode();
+            println!("R from verification (Point: s*G + e*P): {}", hex::encode(&r_verification_point_encoded.to_bytes_le()));
+            
+            println!("\n=== Comparison ===");
+            println!("R signing == R verification (WeierstrassPoint): {}", r_signing_encoded.to_bytes_le() == r_verification_ws_encoded.to_bytes_le());
+            println!("R signing == R verification (Point): {}", r_signing_encoded.to_bytes_le() == r_verification_point_encoded.to_bytes_le());
+            println!("R verification (WeierstrassPoint) == R verification (Point): {}", r_verification_ws_encoded.to_bytes_le() == r_verification_point_encoded.to_bytes_le());
+        }
+        None => {
+            println!("Failed to decode public key to WeierstrassPoint!");
+        }
+    }
+}
+
+
+

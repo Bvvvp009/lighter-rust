@@ -45,6 +45,17 @@ impl ScalarField {
         0x4ACA13B28CA251F5,  // R2[4]
     ]);
     
+    /// R2^-1 mod N: Modular inverse of R2, used to fix Point::mul() scalar form bug
+    /// This is needed because e*P = (e*sk Montgomery)*G when e is canonical,
+    /// but we need (e*sk canonical)*G. Using e * R2^-1 gives the correct result.
+    pub const R2_INV: ScalarField = ScalarField([
+        0x709c213d77a10649,  // R2_INV[0]
+        0xdd567530551c44e6,  // R2_INV[1]
+        0xc97ab1c242380e2e,  // R2_INV[2]
+        0x9628a8046f74c730,  // R2_INV[3]
+        0x5763bcb178ed3ac7,  // R2_INV[4]
+    ]);
+    
     pub const T632: ScalarField = ScalarField([
         0x2B0266F317CA91B3,  // T632[0]
         0xEC1D26528E984773,  // T632[1]
@@ -137,13 +148,21 @@ impl ScalarField {
     ///
     /// Returns `a1` if `c != 0`, otherwise returns `a0`.
     /// This is a constant-time operation used for secure implementations.
+    /// Note: `c` should be either 0 or 0xFFFFFFFFFFFFFFFF (all bits set).
     pub fn select(c: u64, a0: &ScalarField, a1: &ScalarField) -> ScalarField {
+        // Use -c as a mask: if c != 0, -c will be all 1s; if c == 0, -c will be 0
+        // This works because in two's complement: -0 = 0, -0xFFFFFFFFFFFFFFFF = 1
+        // Actually, we need: if c == 0, mask = 0; if c != 0, mask = 0xFFFFFFFFFFFFFFFF
+        // The XOR trick: a0 ^ (mask & (a0 ^ a1))
+        // If mask = 0: a0 ^ 0 = a0
+        // If mask = 0xFFFFFFFFFFFFFFFF: a0 ^ (a0 ^ a1) = a1
+        let mask = if c == 0 { 0 } else { 0xFFFFFFFFFFFFFFFF };
         ScalarField([
-            a0.0[0] ^ (c & (a0.0[0] ^ a1.0[0])),
-            a0.0[1] ^ (c & (a0.0[1] ^ a1.0[1])),
-            a0.0[2] ^ (c & (a0.0[2] ^ a1.0[2])),
-            a0.0[3] ^ (c & (a0.0[3] ^ a1.0[3])),
-            a0.0[4] ^ (c & (a0.0[4] ^ a1.0[4])),
+            a0.0[0] ^ (mask & (a0.0[0] ^ a1.0[0])),
+            a0.0[1] ^ (mask & (a0.0[1] ^ a1.0[1])),
+            a0.0[2] ^ (mask & (a0.0[2] ^ a1.0[2])),
+            a0.0[3] ^ (mask & (a0.0[3] ^ a1.0[3])),
+            a0.0[4] ^ (mask & (a0.0[4] ^ a1.0[4])),
         ])
     }
     
@@ -161,18 +180,15 @@ impl ScalarField {
     pub fn add(&self, rhs: ScalarField) -> ScalarField {
         let r0 = self.add_inner(rhs);
         let (r1, c) = r0.sub_inner(&Self::N);
-        // Go: Select(c, r1, &r0)
-        // Go's Select(c, a0, a1): if c==0 return a0, else return a1
-        // So Select(c, r1, &r0) means: if c==0 return r1, else return r0
-        // But we want: if c==0 (no borrow, r0 < N) return r0, else return r1
-        // So we need to swap arguments: Select(c, r0, r1) but that's backwards too...
-        // Actually: Go Select(c, a0, a1) when c=0 returns a0
-        // We call Select(c, r1, &r0), so when c=0 we get r1, when c!=0 we get r0
-        // We want: when c=0 (r0 < N) return r0, when c!=0 (r0 >= N) return r1
-        // So we need: Select(c, r1, &r0) which is backwards!
-        // Let's check: Select(0, r1, &r0) returns r1, but we want r0
-        // So we should call: Select(c, &r0, &r1)
-        Self::select(c, &r0, &r1)
+        // Logic: r0 = self + rhs (unreduced)
+        //        r1 = r0 - N (subtract modulus)
+        //        c = borrow flag from r0 - N
+        // If c == 0: no borrow, meaning r0 >= N, so we should return r1 (r0 - N)
+        // If c != 0: borrow occurred, meaning r0 < N, so we should return r0
+        // So: select(c, &r1, &r0) - if c==0 return r1, if c!=0 return r0
+        // But our select returns a1 if c != 0, a0 if c == 0
+        // So we need: select(c, &r1, &r0) which gives: if c==0 return r1, if c!=0 return r0
+        Self::select(c, &r1, &r0)
     }
     
     /// Subtracts two scalars with modular reduction.
@@ -255,10 +271,41 @@ impl ScalarField {
         self.mul(self)
     }
     
+    /// Multiplies two canonical scalars and returns the result in canonical form.
+    /// 
+    /// This is a workaround for the Point::mul() scalar form bug where e*P != (e*sk canonical)*G.
+    /// Uses BigUint for canonical multiplication to avoid Montgomery form issues.
+    pub fn mul_canonical(&self, rhs: &ScalarField) -> ScalarField {
+        // Convert to BigUint (little-endian)
+        let self_bytes = self.to_bytes_le();
+        let rhs_bytes = rhs.to_bytes_le();
+        let n_bytes = Self::N.to_bytes_le();
+        
+        let self_big = BigUint::from_bytes_le(&self_bytes);
+        let rhs_big = BigUint::from_bytes_le(&rhs_bytes);
+        let n_big = BigUint::from_bytes_le(&n_bytes);
+        
+        // Compute product mod N in canonical form
+        let product_big = (&self_big * &rhs_big) % &n_big;
+        let product_bytes = product_big.to_bytes_le();
+        
+        // Convert back to limbs
+        let mut product_limbs = [0u64; 5];
+        for (i, chunk) in product_bytes.chunks(8).enumerate().take(5) {
+            let mut limb_bytes = [0u8; 8];
+            let copy_len = chunk.len().min(8);
+            limb_bytes[..copy_len].copy_from_slice(&chunk[..copy_len]);
+            product_limbs[i] = u64::from_le_bytes(limb_bytes);
+        }
+        
+        ScalarField(product_limbs)
+    }
+    
     /// Converts a scalar from Montgomery form to canonical form.
     ///
-    /// This is needed because `mul()` returns Montgomery form, but operations
-    /// like `recode_signed()` and serialization expect canonical form.
+    /// Note: `mul()` already returns canonical form, so this is only needed
+    /// for values that are explicitly in Montgomery form (e.g., from `monty_mul()`).
+    /// Operations like `recode_signed()` and serialization expect canonical form.
     ///
     /// # Example
     ///
@@ -266,14 +313,14 @@ impl ScalarField {
     /// use crypto::ScalarField;
     ///
     /// let a = ScalarField::from_bytes_le(&[1; 40]).unwrap();
-    /// let b = ScalarField::from_bytes_le(&[2; 40]).unwrap();
-    /// let product_montgomery = a.mul(&b); // Montgomery form
-    /// let product_canonical = product_montgomery.to_canonical(); // Canonical form
+    /// let a_montgomery = a.monty_mul(&ScalarField::R2); // Convert to Montgomery form
+    /// let a_canonical = a_montgomery.to_canonical(); // Convert back to canonical
     /// ```
     pub fn to_canonical(&self) -> ScalarField {
         // To convert from Montgomery to canonical: multiply by 1 using Montgomery multiplication
         // If x_m = x * R2 mod n (Montgomery form), then x = x_m * 1 / R mod n
         // Montgomery multiplication with 1 (canonical) gives: (x_m * 1) / R mod n = x mod n
+        // Note: ONE is in canonical form [1, 0, 0, 0, 0], which is correct for this conversion
         self.monty_mul(&Self::ONE)
     }
     
@@ -312,11 +359,17 @@ impl ScalarField {
     /// The conversion treats the Fp5Element as a big-endian 320-bit integer:
     /// `arr[4]<<256 | arr[3]<<192 | arr[2]<<128 | arr[1]<<64 | arr[0]`
     pub fn from_fp5_element(e_fp5: &crate::Fp5Element) -> Self {
+        // Match Go's FromGfp5 exactly:
+        // Go: result.Or(result, new(big.Int).SetUint64(fp5[i].ToCanonicalUint64()))
+        // We need to convert each Goldilocks element to canonical form first
+        
         // Create 320-bit integer from array (big-endian interpretation)
         let mut value = BigUint::from(0u64);
         for i in (0..5).rev() {
             value <<= 64;
-            value += BigUint::from(e_fp5.0[i].0);
+            // CRITICAL: Use to_canonical_u64() to match Go's ToCanonicalUint64()
+            let canonical_val = e_fp5.0[i].to_canonical_u64();
+            value += BigUint::from(canonical_val);
         }
         
         // Step 2: FromNonCanonicalBigInt - reduce modulo ORDER

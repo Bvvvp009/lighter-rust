@@ -1,0 +1,118 @@
+//! Detailed debug test to understand R computation mismatch
+
+use goldilocks_crypto::{ScalarField, Point, sign, verify_signature, Fp5Element};
+use hex;
+
+#[test]
+fn test_r_computation_detailed() {
+    println!("\n=== Detailed R Computation Debug ===\n");
+    
+    // Use simple test case: sk = 1
+    let private_key = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 1;
+        bytes
+    }).unwrap();
+    let private_key_bytes = private_key.to_bytes_le();
+    
+    let message = {
+        let mut msg = [0u8; 40];
+        for i in 0..40 {
+            msg[i] = i as u8;
+        }
+        msg
+    };
+    
+    println!("Test setup:");
+    println!("  Private key (sk): {}...", hex::encode(&private_key_bytes[..8]));
+    println!("  Message: {}...", hex::encode(&message[..8]));
+    
+    // Sign the message
+    let signature = sign(&private_key_bytes, &message).unwrap();
+    let s = ScalarField::from_bytes_le(&signature[..40]).unwrap();
+    let e = ScalarField::from_bytes_le(&signature[40..]).unwrap();
+    
+    println!("\nSignature components:");
+    println!("  s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("  e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Reconstruct k = s + e*sk
+    println!("\n=== Reconstructing k = s + e*sk ===");
+    let e_times_sk_montgomery = e.mul(&private_key);
+    println!("  e*sk (Montgomery): {}...", hex::encode(&e_times_sk_montgomery.to_bytes_le()[..8]));
+    
+    let e_times_sk_canonical = e_times_sk_montgomery.to_canonical();
+    println!("  e*sk (canonical): {}...", hex::encode(&e_times_sk_canonical.to_bytes_le()[..8]));
+    
+    let k_reconstructed = s.add(e_times_sk_canonical);
+    println!("  k = s + e*sk: {}...", hex::encode(&k_reconstructed.to_bytes_le()[..8]));
+    
+    // Compute expected R = k*G
+    let generator = Point::generator();
+    let expected_r = generator.mul(&k_reconstructed);
+    let expected_r_encoded = expected_r.encode();
+    
+    println!("\n=== Expected R (from k*G) ===");
+    println!("  Encoded: {}", hex::encode(&expected_r_encoded.to_bytes_le()));
+    
+    // Compute R using verification method: s*G + e*P
+    let public_key_point = generator.mul(&private_key);
+    let public_key_bytes = public_key_point.encode().to_bytes_le();
+    let public_point = Point::decode(&Fp5Element::from_bytes_le(&public_key_bytes).unwrap()).unwrap();
+    
+    println!("\n=== Computing R using verification (s*G + e*P) ===");
+    
+    // Method 1: Using mul_add2
+    let computed_r_mul_add2 = Point::mul_add2(&generator, &public_point, &s, &e);
+    let computed_r_mul_add2_encoded = computed_r_mul_add2.encode();
+    
+    println!("  Method 1 (mul_add2):");
+    println!("    Encoded: {}", hex::encode(&computed_r_mul_add2_encoded.to_bytes_le()));
+    println!("    Matches expected: {}", expected_r_encoded.0.iter().zip(computed_r_mul_add2_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0));
+    
+    // Method 2: Separate multiplications
+    let s_g = generator.mul(&s);
+    let e_p = public_point.mul(&e);
+    let computed_r_separate = s_g.add(&e_p);
+    let computed_r_separate_encoded = computed_r_separate.encode();
+    
+    println!("  Method 2 (separate):");
+    println!("    s*G encoded: {}...", hex::encode(&s_g.encode().to_bytes_le()[..16]));
+    println!("    e*P encoded: {}...", hex::encode(&e_p.encode().to_bytes_le()[..16]));
+    println!("    (s*G + e*P) encoded: {}", hex::encode(&computed_r_separate_encoded.to_bytes_le()));
+    println!("    Matches expected: {}", expected_r_encoded.0.iter().zip(computed_r_separate_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0));
+    
+    // Method 3: Verify using (e*sk)*G
+    let e_sk_canonical_g = generator.mul(&e_times_sk_canonical);
+    let computed_r_alt = s_g.add(&e_sk_canonical_g);
+    let computed_r_alt_encoded = computed_r_alt.encode();
+    
+    println!("  Method 3 (s*G + (e*sk canonical)*G):");
+    println!("    (e*sk canonical)*G encoded: {}...", hex::encode(&e_sk_canonical_g.encode().to_bytes_le()[..16]));
+    println!("    Result encoded: {}", hex::encode(&computed_r_alt_encoded.to_bytes_le()));
+    println!("    Matches expected: {}", expected_r_encoded.0.iter().zip(computed_r_alt_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0));
+    
+    // Check if e*P equals (e*sk canonical)*G
+    println!("\n=== Checking e*P vs (e*sk canonical)*G ===");
+    let e_p_encoded = e_p.encode();
+    let e_sk_g_encoded = e_sk_canonical_g.encode();
+    println!("  e*P encoded: {}", hex::encode(&e_p_encoded.to_bytes_le()));
+    println!("  (e*sk canonical)*G encoded: {}", hex::encode(&e_sk_g_encoded.to_bytes_le()));
+    println!("  Match: {}", e_p_encoded.0.iter().zip(e_sk_g_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0));
+    
+    // Final verification
+    println!("\n=== Final Verification ===");
+    let is_valid = verify_signature(&signature, &message, &public_key_bytes).unwrap();
+    println!("  Verification result: {}", if is_valid { "✅ VALID" } else { "❌ INVALID" });
+}
+
+
+
+
+
+
+

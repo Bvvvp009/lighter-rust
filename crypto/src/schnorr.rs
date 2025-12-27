@@ -486,6 +486,7 @@ impl Point {
     /// let result = generator.mul(&scalar);
     /// ```
     pub fn mul(&self, scalar: &ScalarField) -> Point {
+        // Check for zero scalar
         if scalar.0 == [0, 0, 0, 0, 0] {
             return Point::neutral();
         }
@@ -502,15 +503,19 @@ impl Point {
         let win = self.make_window_affine();
         
         // Recode scalar into signed digits
-        // Note: recode_signed interprets raw limbs, so it expects canonical form
-        // Scalars from bytes are canonical, but scalars from mul() are Montgomery
         let digits = scalar.recode_signed(WINDOW);
         
-        // Start with the last digit (least significant)
-        let mut result = Self::lookup_var_time(&win, digits[digits.len() - 1]).to_point();
+        // Find the first non-zero digit (most significant)
+        let mut start_idx = digits.len() - 1;
+        while start_idx > 0 && digits[start_idx] == 0 {
+            start_idx -= 1;
+        }
+        
+        // Start with the first non-zero digit
+        let mut result = Self::lookup_var_time(&win, digits[start_idx]).to_point();
 
-        // Process remaining digits from right to left (least significant to most significant)
-        for i in (0..digits.len() - 1).rev() {
+        // Process remaining digits from MSB to LSB
+        for i in (0..start_idx).rev() {
             result = result.set_m_double(WINDOW as u32);
             let lookup = Self::lookup(&win, digits[i]);
             result = result.add_affine(&lookup);
@@ -831,7 +836,7 @@ impl Point {
 /// - Message is 40 bytes (5 * 8 bytes)
 /// - Each 8-byte chunk is interpreted as little-endian u64
 /// - Converted to Goldilocks field elements and assembled into Fp5Element
-fn message_to_fp5(message: &[u8]) -> Result<Fp5Element> {
+pub(crate) fn message_to_fp5(message: &[u8]) -> Result<Fp5Element> {
     if message.len() != 40 {
         return Err(CryptoError::InvalidMessageLength(message.len()));
     }
@@ -840,11 +845,7 @@ fn message_to_fp5(message: &[u8]) -> Result<Fp5Element> {
     for (i, chunk) in message.chunks(8).enumerate().take(5) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        // CRITICAL FIX: Go SDK's FromCanonicalLittleEndianBytes reverses bytes before
-        // calling SetBytesCanonical (which expects big-endian). We need to match this.
-        // Reverse bytes to match Go's behavior: little-endian input -> reversed -> big-endian interpretation
-        bytes.reverse();
-        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_be_bytes(bytes));
+        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_le_bytes(bytes));
     }
     Ok(Fp5Element(message_elements))
 }
@@ -885,6 +886,28 @@ pub fn validate_public_key(public_key: &[u8]) -> Result<()> {
         .ok_or(CryptoError::InvalidPublicKey)?;
     
     Ok(())
+}
+
+/// Signs a message using Schnorr signature scheme with a randomly generated nonce.
+///
+/// This function generates a random nonce and calls `sign_with_nonce` internally.
+/// 
+/// # Arguments
+/// * `private_key` - 40-byte private key (little-endian)
+/// * `message` - Message to sign (typically 40 bytes, representing a hash)
+/// 
+/// # Returns
+/// A vector containing the signature (80 bytes: 40 bytes s + 40 bytes e)
+/// 
+/// # Errors
+/// Returns an error if the private key length is invalid.
+pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>> {
+    // Generate a random nonce
+    let nonce = ScalarField::sample_crypto();
+    let nonce_bytes = nonce.to_bytes_le();
+    
+    // Call sign_with_nonce with the random nonce
+    sign_with_nonce(private_key, message, &nonce_bytes)
 }
 
 /// Signs a message using Schnorr signature scheme with a given nonce.
@@ -942,7 +965,76 @@ pub fn sign_with_nonce(private_key: &[u8], message: &[u8], nonce_bytes: &[u8]) -
     let e_scalar = ScalarField::from_fp5_element(&e_fp5);
     
     // Step 3: Compute response s = nonce - e * private_key
-    // Note: mul() returns canonical form (Go keeps limbs in normal representation)
+    let e_times_private = e_scalar.mul(&private_scalar);
+    let s = nonce_scalar.sub(e_times_private);
+    
+    // Step 4: Assemble signature as (s || e)
+    let mut signature = [0u8; 80];
+    let s_bytes = s.to_bytes_le();
+    signature[..40].copy_from_slice(&s_bytes);
+    
+    let e_bytes = e_scalar.to_bytes_le();
+    signature[40..].copy_from_slice(&e_bytes);
+    
+    Ok(signature.to_vec())
+}
+
+/// Signs a Poseidon2-hashed message (already as Fp5Element).
+///
+/// This is used when the message is already hashed by Poseidon2 (e.g., transaction hash).
+/// The input is the Poseidon2 hash output (Fp5Element) as 40 little-endian bytes.
+/// 
+/// This matches Go's behavior: construct transaction → hash with Poseidon2 → sign the hash.
+/// NOTE: Unlike sign_with_nonce, this does NOT hash the message again.
+///
+/// # Arguments
+/// * `private_key` - 40-byte private key (little-endian)
+/// * `hashed_message_fp5` - 40-byte Poseidon2 hash output (little-endian Fp5Element) - NOT hashed again
+/// * `nonce_bytes` - Nonce bytes (will be padded/truncated to 40 bytes)
+///
+/// # Returns
+/// A vector containing the signature (80 bytes: 40 bytes s + 40 bytes e)
+pub fn sign_hashed_message(private_key: &[u8], hashed_message_fp5: &[u8], nonce_bytes: &[u8]) -> Result<Vec<u8>> {
+    if private_key.len() != 40 {
+        return Err(CryptoError::InvalidPrivateKeyLength(private_key.len()));
+    }
+    
+    if hashed_message_fp5.len() != 40 {
+        return Err(CryptoError::InvalidMessageLength(hashed_message_fp5.len()));
+    }
+    
+    // Convert private key to scalar
+    let private_scalar = ScalarField::from_bytes_le(private_key)
+        .map_err(|_| CryptoError::InvalidPrivateKeyLength(private_key.len()))?;
+    
+    // Convert nonce to scalar
+    let mut nonce_bytes_40 = [0u8; 40];
+    let copy_len = nonce_bytes.len().min(40);
+    nonce_bytes_40[..copy_len].copy_from_slice(&nonce_bytes[..copy_len]);
+    let nonce_scalar = ScalarField::from_bytes_le(&nonce_bytes_40)
+        .map_err(|_| CryptoError::InvalidPrivateKeyLength(nonce_bytes.len()))?;
+    
+    // The hashed_message_fp5 is already a Poseidon2 output - convert it to Fp5Element
+    // This is the m (message hash) that we use directly in signing
+    let message_fp5 = Fp5Element::from_bytes_le(hashed_message_fp5)
+        .map_err(|_| CryptoError::InvalidMessageLength(hashed_message_fp5.len()))?;
+    
+    // Step 1: Compute R = nonce * G
+    let generator = Point::generator();
+    let r_point = generator.mul(&nonce_scalar);
+    let r_encoded = r_point.encode();
+    
+    // Step 2: Compute challenge e = H(R || m) where m is the already-hashed message
+    // This is different from sign_with_nonce which hashes the raw message first
+    use poseidon_hash::hash_to_quintic_extension;
+    let mut pre_image = [Goldilocks::zero(); 10];
+    pre_image[..5].copy_from_slice(&r_encoded.0);
+    pre_image[5..].copy_from_slice(&message_fp5.0);
+    
+    let e_fp5 = hash_to_quintic_extension(&pre_image);
+    let e_scalar = ScalarField::from_fp5_element(&e_fp5);
+    
+    // Step 3: Compute response s = nonce - e * private_key
     let e_times_private = e_scalar.mul(&private_scalar);
     let s = nonce_scalar.sub(e_times_private);
     

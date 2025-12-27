@@ -1,0 +1,81 @@
+//! Debug test to compare R computation during signing vs verification
+
+use goldilocks_crypto::{ScalarField, Point, WeierstrassPoint, sign, verify_signature, Fp5Element};
+use hex;
+
+#[test]
+fn test_r_computation_comparison() {
+    println!("\n=== Debug: R Computation Comparison ===\n");
+    
+    // Generate a key pair
+    let private_key = ScalarField::sample_crypto();
+    let private_key_bytes = private_key.to_bytes_le();
+    
+    let generator = Point::generator();
+    let public_key_point = generator.mul(&private_key);
+    let public_key_bytes = public_key_point.encode().to_bytes_le();
+    
+    println!("Private key: {}...", hex::encode(&private_key_bytes[..8]));
+    println!("Public key: {}...", hex::encode(&public_key_bytes[..8]));
+    
+    // Sign a message
+    let message = [0u8; 40];
+    let signature = sign(&private_key_bytes, &message).unwrap();
+    
+    println!("\nSignature: {}...", hex::encode(&signature[..20]));
+    
+    // Extract s and e
+    let s_bytes = &signature[..40];
+    let e_bytes = &signature[40..];
+    let s = ScalarField::from_bytes_le(s_bytes).unwrap();
+    let e = ScalarField::from_bytes_le(e_bytes).unwrap();
+    
+    println!("s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Reconstruct k = s + e*sk (what R should be)
+    // mul() returns canonical form, so no conversion needed
+    let e_sk = e.mul(&private_key);
+    let k = s.add(e_sk);
+    
+    println!("\n=== R from Signing (k*G) ===");
+    let r_signing = generator.mul(&k);
+    let r_signing_encoded = r_signing.encode();
+    println!("R encoded (Point): {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // Compute R during verification using WeierstrassPoint
+    println!("\n=== R from Verification (s*G + e*P using WeierstrassPoint) ===");
+    let public_key_fp5 = Fp5Element::from_bytes_le(&public_key_bytes).unwrap();
+    let public_point_ws = WeierstrassPoint::decode_fp5_as_weierstrass(&public_key_fp5).unwrap();
+    let generator_ws = WeierstrassPoint::GENERATOR;
+    let r_verification_ws = WeierstrassPoint::mul_add2(&generator_ws, &public_point_ws, &s, &e);
+    let r_verification_ws_encoded = r_verification_ws.encode();
+    println!("R encoded (WeierstrassPoint): {}", hex::encode(&r_verification_ws_encoded.to_bytes_le()));
+    
+    // Convert WeierstrassPoint to Point and encode
+    let r_point_from_ws = Point::decode(&r_verification_ws_encoded).unwrap();
+    let r_verification_point_encoded = r_point_from_ws.encode();
+    println!("R encoded (Point from WeierstrassPoint): {}", hex::encode(&r_verification_point_encoded.to_bytes_le()));
+    
+    // Compare
+    println!("\n=== Comparison ===");
+    println!("R from signing == R from verification (WeierstrassPoint): {}", 
+        r_signing_encoded.to_bytes_le() == r_verification_ws_encoded.to_bytes_le());
+    println!("R from signing == R from verification (Point converted): {}", 
+        r_signing_encoded.to_bytes_le() == r_verification_point_encoded.to_bytes_le());
+    
+    // Also try using Point::mul_add2
+    println!("\n=== R from Verification (s*G + e*P using Point::mul_add2) ===");
+    let public_point = Point::decode(&public_key_fp5).unwrap();
+    let r_verification_point = Point::mul_add2(&generator, &public_point, &s, &e);
+    let r_verification_point_encoded2 = r_verification_point.encode();
+    println!("R encoded (Point::mul_add2): {}", hex::encode(&r_verification_point_encoded2.to_bytes_le()));
+    println!("R from signing == R from verification (Point::mul_add2): {}", 
+        r_signing_encoded.to_bytes_le() == r_verification_point_encoded2.to_bytes_le());
+    
+    // Verify signature
+    let is_valid = verify_signature(&signature, &message, &public_key_bytes).unwrap();
+    println!("\n=== Verification Result ===");
+    println!("Signature valid: {}", is_valid);
+}
+

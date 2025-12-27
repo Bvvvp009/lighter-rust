@@ -1,0 +1,115 @@
+//! Reconstruct R from Go signature and compare with our computation
+
+use goldilocks_crypto::{ScalarField, Point, Fp5Element};
+use poseidon_hash::{hash_to_quintic_extension, Goldilocks};
+use hex;
+
+#[test]
+fn test_go_signature_r_reconstruction() {
+    println!("\n=== Reconstructing R from Go Signature ===\n");
+    
+    // Go signature from cross_validation.rs
+    let private_key_hex = "01000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let public_key_hex = "04000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let message_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627";
+    let signature_hex = "f026eefe094088d8d21ebad69565715f7a8a1fe27e5a7c0401e5cbd384aa902953597975f447be70f2d89d958c99870fca816a00a4f61689bf7b98ed67a5837b151b342c6c556f56b4a6860a09b8410f";
+    
+    let private_key = hex::decode(private_key_hex).unwrap();
+    let public_key = hex::decode(public_key_hex).unwrap();
+    let message = hex::decode(message_hex).unwrap();
+    let signature = hex::decode(signature_hex).unwrap();
+    
+    let s = ScalarField::from_bytes_le(&signature[..40]).unwrap();
+    let e = ScalarField::from_bytes_le(&signature[40..]).unwrap();
+    let sk = ScalarField::from_bytes_le(&private_key).unwrap();
+    
+    println!("Signature components:");
+    println!("  s: {}...", hex::encode(&s.to_bytes_le()[..8]));
+    println!("  e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    
+    // Reconstruct k = s + e*sk
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let k = s.add(e_sk_canonical);
+    
+    println!("\nReconstructed k = s + e*sk:");
+    println!("  k: {}...", hex::encode(&k.to_bytes_le()[..8]));
+    
+    // Compute R = k*G (what R should be)
+    let generator = Point::generator();
+    let expected_r = generator.mul(&k);
+    let expected_r_encoded = expected_r.encode();
+    
+    println!("\nExpected R (k*G):");
+    println!("  {}", hex::encode(&expected_r_encoded.to_bytes_le()));
+    
+    // Compute R using verification method
+    let public_key_fp5 = Fp5Element::from_bytes_le(&public_key).unwrap();
+    let public_point = Point::decode(&public_key_fp5).unwrap();
+    
+    // Use e/R form (matching Go)
+    let e_adjusted = e.monty_mul(&ScalarField::ONE);
+    let computed_r = Point::mul_add2(&generator, &public_point, &s, &e_adjusted);
+    let computed_r_encoded = computed_r.encode();
+    
+    println!("\nComputed R (s*G + (e/R)*P):");
+    println!("  {}", hex::encode(&computed_r_encoded.to_bytes_le()));
+    
+    // Compare
+    let r_matches = expected_r_encoded.0.iter().zip(computed_r_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0);
+    println!("\nR matches: {}", r_matches);
+    
+    if !r_matches {
+        println!("  ❌ R doesn't match! This is the problem.");
+        return;
+    }
+    
+    // Now check hash computation
+    println!("\n=== Hash Computation ===");
+    
+    // Convert message - need to match exactly what verification uses
+    // Verification uses message_to_fp5 which reverses bytes. Let's replicate that.
+    let mut message_elements = [Goldilocks::zero(); 5];
+    for (i, chunk) in message.chunks(8).enumerate().take(5) {
+        let mut bytes = [0u8; 8];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        // Match message_to_fp5: reverse bytes, then interpret as big-endian
+        bytes.reverse();
+        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_be_bytes(bytes));
+    }
+    let message_fp5 = Fp5Element(message_elements);
+    
+    // Construct pre-image: [R[0..5], message[0..5]]
+    let mut pre_image = [Goldilocks::zero(); 10];
+    pre_image[..5].copy_from_slice(&computed_r_encoded.0);
+    pre_image[5..].copy_from_slice(&message_fp5.0);
+    
+    println!("  Pre-image R elements:");
+    for (i, elem) in pre_image[..5].iter().enumerate() {
+        println!("    R[{}] = Goldilocks({})", i, elem.0);
+    }
+    println!("  Pre-image message elements:");
+    for (i, elem) in pre_image[5..].iter().enumerate() {
+        println!("    M[{}] = Goldilocks({})", i, elem.0);
+    }
+    
+    // Compute hash
+    let e_prime_fp5 = hash_to_quintic_extension(&pre_image);
+    let e_prime = ScalarField::from_fp5_element(&e_prime_fp5);
+    
+    println!("\n  e (from signature): {}", hex::encode(&e.to_bytes_le()));
+    println!("  e' (computed): {}", hex::encode(&e_prime.to_bytes_le()));
+    println!("  e == e': {}", e.0 == e_prime.0);
+    
+    if e.0 != e_prime.0 {
+        println!("  ❌ e != e'! Hash computation issue.");
+        println!("  This means either:");
+        println!("    1. R encoding is wrong");
+        println!("    2. Message encoding is wrong");
+        println!("    3. Hash function is different");
+    } else {
+        println!("  ✅ e == e'! Hash computation is correct!");
+    }
+}
+

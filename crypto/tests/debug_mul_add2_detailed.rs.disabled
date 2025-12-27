@@ -1,0 +1,172 @@
+//! Detailed debugging test for mul_add2 to identify intermittent verification failures
+//! This test compares Point::mul_add2 step-by-step with expected results
+
+use goldilocks_crypto::{ScalarField, Point, Fp5Element};
+use hex;
+
+#[test]
+fn debug_mul_add2_detailed() {
+    println!("\n=== Detailed mul_add2 Debugging ===\n");
+    
+    // Test with known values to identify the bug
+    let generator = Point::generator();
+    
+    // Create simple test scalars
+    let s = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 5; // s = 5
+        bytes
+    }).unwrap();
+    
+    let e = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 3; // e = 3
+        bytes
+    }).unwrap();
+    
+    let sk = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 7; // sk = 7
+        bytes
+    }).unwrap();
+    
+    println!("Test scalars:");
+    println!("  s = {}", hex::encode(&s.to_bytes_le()[..8]));
+    println!("  e = {}", hex::encode(&e.to_bytes_le()[..8]));
+    println!("  sk = {}", hex::encode(&sk.to_bytes_le()[..8]));
+    
+    // Compute public key
+    let public_key = generator.mul(&sk);
+    let public_key_encoded = public_key.encode();
+    println!("\nPublic key: {}", hex::encode(&public_key_encoded.to_bytes_le()));
+    
+    // Method 1: Compute expected result using s*G + e*P separately
+    println!("\n=== Method 1: Separate multiplications ===");
+    let s_g = generator.mul(&s);
+    let e_pk = public_key.mul(&e);
+    let expected_r = s_g.add(&e_pk);
+    let expected_r_encoded = expected_r.encode();
+    println!("Expected R = s*G + e*P: {}", hex::encode(&expected_r_encoded.to_bytes_le()));
+    
+    // Method 2: Compute using mul_add2
+    println!("\n=== Method 2: mul_add2 ===");
+    let result_mul_add2 = Point::mul_add2(&generator, &public_key, &s, &e);
+    let result_mul_add2_encoded = result_mul_add2.encode();
+    println!("Result from mul_add2: {}", hex::encode(&result_mul_add2_encoded.to_bytes_le()));
+    
+    // Compare
+    let matches = expected_r_encoded.to_bytes_le() == result_mul_add2_encoded.to_bytes_le();
+    println!("\nMatch: {}", matches);
+    
+    if !matches {
+        println!("\n❌ MISMATCH DETECTED!");
+        println!("Expected: {}", hex::encode(&expected_r_encoded.to_bytes_le()));
+        println!("Got:      {}", hex::encode(&result_mul_add2_encoded.to_bytes_le()));
+        
+        // Debug window construction
+        debug_window_construction(&generator, &public_key);
+        
+        // Debug limb processing
+        debug_limb_processing(&generator, &public_key, &s, &e);
+    } else {
+        println!("\n✅ Methods match!");
+    }
+    
+    // Test with canonical reconstruction: k = s + e*sk
+    println!("\n=== Testing with canonical reconstruction ===");
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let k = s.add(&e_sk_canonical);
+    println!("k = s + e*sk (canonical): {}", hex::encode(&k.to_bytes_le()[..8]));
+    
+    let expected_r2 = generator.mul(&k);
+    let expected_r2_encoded = expected_r2.encode();
+    println!("Expected R2 = k*G: {}", hex::encode(&expected_r2_encoded.to_bytes_le()));
+    
+    let matches2 = expected_r2_encoded.to_bytes_le() == result_mul_add2_encoded.to_bytes_le();
+    println!("mul_add2 matches k*G: {}", matches2);
+    
+    if !matches2 {
+        println!("❌ mul_add2 does NOT match k*G!");
+        println!("This suggests a bug in mul_add2 implementation");
+    }
+}
+
+fn debug_window_construction(g: &Point, pk: &Point) {
+    println!("\n=== Debug: Window Construction ===");
+    
+    use goldilocks_crypto::schnorr::AffinePoint;
+    
+    const WINDOW_SIZE: usize = 16;
+    
+    let to_affine_single = |p: &Point| -> AffinePoint {
+        let m1 = p.z.mul(&p.t).inverse();
+        AffinePoint {
+            x: p.x.mul(&p.t).mul(&m1),
+            u: p.u.mul(&p.z).mul(&m1),
+        }
+    };
+    
+    // Build window for generator
+    let mut g_window = vec![AffinePoint::neutral(); WINDOW_SIZE];
+    g_window[0] = AffinePoint::neutral();
+    g_window[1] = to_affine_single(g);
+    g_window[2] = to_affine_single(&g.double());
+    
+    println!("Window[0] (neutral): x={:?}, u={:?}", 
+        hex::encode(&g_window[0].x.to_bytes_le()[..16]),
+        hex::encode(&g_window[0].u.to_bytes_le()[..16]));
+    println!("Window[1] (G): x={:?}, u={:?}", 
+        hex::encode(&g_window[1].x.to_bytes_le()[..16]),
+        hex::encode(&g_window[1].u.to_bytes_le()[..16]));
+    println!("Window[2] (2*G): x={:?}, u={:?}", 
+        hex::encode(&g_window[2].x.to_bytes_le()[..16]),
+        hex::encode(&g_window[2].u.to_bytes_le()[..16]));
+    
+    // Check if window[0] + window[1] = window[1] (neutral + G = G)
+    let neutral_pt = g_window[0].to_point();
+    let g_pt = g_window[1].to_point();
+    let sum = neutral_pt.add(&g_pt);
+    let sum_encoded = sum.encode();
+    let g_encoded = g_pt.encode();
+    println!("\nWindow[0] + Window[1] == Window[1]: {}", 
+        sum_encoded.to_bytes_le() == g_encoded.to_bytes_le());
+    
+    // Check if window[1] + window[1] = window[2] (G + G = 2*G)
+    let g2_pt = g_window[2].to_point();
+    let g2_encoded = g2_pt.encode();
+    println!("Window[1] + Window[1] == Window[2]: {}", 
+        sum_encoded.to_bytes_le() == g2_encoded.to_bytes_le());
+}
+
+fn debug_limb_processing(g: &Point, pk: &Point, s: &ScalarField, e: &ScalarField) {
+    println!("\n=== Debug: Limb Processing ===");
+    
+    let s_limbs = s.split_to_4bit_limbs();
+    let e_limbs = e.split_to_4bit_limbs();
+    
+    println!("s limbs (4-bit): {:?}", s_limbs.iter().map(|x| *x as u32).collect::<Vec<_>>());
+    println!("e limbs (4-bit): {:?}", e_limbs.iter().map(|x| *x as u32).collect::<Vec<_>>());
+    println!("Number of limbs: {}", s_limbs.len());
+    
+    // Check if limbs are correct
+    let mut reconstructed_s = ScalarField::from_bytes_le(&[0u8; 40]).unwrap();
+    for (i, &limb) in s_limbs.iter().enumerate() {
+        let limb_scalar = ScalarField::from_bytes_le(&{
+            let mut bytes = [0u8; 40];
+            bytes[0] = limb;
+            bytes
+        }).unwrap();
+        let shift = ScalarField::from_bytes_le(&{
+            let mut bytes = [0u8; 40];
+            // Shift by 4*i bits
+            if i < 10 {
+                bytes[i/2] = if i % 2 == 0 { 1u8 << (4 * (i % 2)) } else { 0 };
+            }
+            bytes
+        }).unwrap();
+        // This is a simplified check - actual reconstruction is more complex
+    }
+}
+
+

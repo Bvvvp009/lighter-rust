@@ -1,4 +1,4 @@
-use api_client::LighterClient;
+use api_client::{LighterClient, CreateOrderRequest};
 use std::env;
 
 #[tokio::main]
@@ -10,18 +10,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenv::dotenv().ok();
 
-    // Load credentials from environment variables
-    // Create a .env file with: BASE_URL, ACCOUNT_INDEX, API_KEY_INDEX, API_PRIVATE_KEY
-    let base_url = env::var("BASE_URL")
-        .map_err(|_| "BASE_URL environment variable is required. Please set it in your .env file.")?;
-    let account_index: i64 = env::var("ACCOUNT_INDEX")
-        .map_err(|_| "ACCOUNT_INDEX environment variable is required. Please set it in your .env file.")?
-        .parse()?;
-    let api_key_index: u8 = env::var("API_KEY_INDEX")
-        .map_err(|_| "API_KEY_INDEX environment variable is required. Please set it in your .env file.")?
-        .parse()?;
-    let api_key = env::var("API_PRIVATE_KEY")
-        .map_err(|_| "API_PRIVATE_KEY environment variable is required. Please set it in your .env file.")?;
+    let base_url = env::var("BASE_URL")?;
+    let account_index: i64 = env::var("ACCOUNT_INDEX")?.parse()?;
+    let api_key_index: u8 = env::var("API_KEY_INDEX")?.parse()?;
+    let api_key = env::var("API_PRIVATE_KEY")?;
 
     println!("📋 Configuration:");
     println!("  Base URL: {}", base_url);

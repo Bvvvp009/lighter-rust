@@ -1,0 +1,123 @@
+//! Debug R computation and hash to understand why e != e_prime
+
+use goldilocks_crypto::{ScalarField, Point, Fp5Element, sign};
+use goldilocks_crypto::schnorr::sign_with_nonce;
+use poseidon_hash::{hash_to_quintic_extension, Goldilocks};
+use hex;
+
+#[test]
+fn test_r_and_hash_computation() {
+    println!("\n=== Debugging R and Hash Computation ===\n");
+    
+    // Use the same test vector as cross_validation
+    let private_key_hex = "01000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let message_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627";
+    
+    let private_key = hex::decode(private_key_hex).unwrap();
+    let message = hex::decode(message_hex).unwrap();
+    
+    // Try to reproduce Go's signature by using the same nonce
+    // From cross_validation.rs, we know Go used nonce with first byte = 1
+    let nonce_bytes = {
+        let mut n = [0u8; 40];
+        n[0] = 1;
+        n
+    };
+    
+    println!("Test setup:");
+    println!("  Private key: {}", private_key_hex);
+    println!("  Message: {}", message_hex);
+    println!("  Nonce: {}...", hex::encode(&nonce_bytes[..8]));
+    
+    // Sign with fixed nonce (matching Go)
+    let signature = sign_with_nonce(&private_key, &message, &nonce_bytes).unwrap();
+    let s = ScalarField::from_bytes_le(&signature[..40]).unwrap();
+    let e = ScalarField::from_bytes_le(&signature[40..]).unwrap();
+    
+    println!("\nSignature components:");
+    println!("  s: {}", hex::encode(&s.to_bytes_le()));
+    println!("  e: {}", hex::encode(&e.to_bytes_le()));
+    
+    // Compute R during signing (what Rust computed)
+    let generator = Point::generator();
+    let nonce_scalar = ScalarField::from_bytes_le(&nonce_bytes).unwrap();
+    let r_signing = generator.mul(&nonce_scalar);
+    let r_signing_encoded = r_signing.encode();
+    
+    println!("\n=== R During Signing (Rust) ===");
+    println!("  R = k*G (where k = nonce):");
+    println!("  Encoded: {}", hex::encode(&r_signing_encoded.to_bytes_le()));
+    
+    // Compute R during verification (what we compute)
+    let sk = ScalarField::from_bytes_le(&private_key).unwrap();
+    let public_key_point = generator.mul(&sk);
+    let public_key_fp5 = public_key_point.encode();
+    let public_point = Point::decode(&public_key_fp5).unwrap();
+    
+    // Use e/R form for verification (matching Go)
+    let e_adjusted = e.monty_mul(&ScalarField::ONE);
+    let r_verification = Point::mul_add2(&generator, &public_point, &s, &e_adjusted);
+    let r_verification_encoded = r_verification.encode();
+    
+    println!("\n=== R During Verification (Rust) ===");
+    println!("  R = s*G + (e/R)*P:");
+    println!("  Encoded: {}", hex::encode(&r_verification_encoded.to_bytes_le()));
+    
+    // Compare
+    let r_matches = r_signing_encoded.0.iter().zip(r_verification_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0);
+    println!("  R matches: {}", r_matches);
+    
+    if !r_matches {
+        println!("  ❌ R from signing != R from verification!");
+        println!("  This is the root cause of verification failure!");
+        return;
+    }
+    
+    // Now check hash computation
+    println!("\n=== Hash Computation ===");
+    
+    // Convert message to Fp5Element (matching signing)
+    // Use the same approach as in verification: from_bytes_le directly
+    // since message is already 40 bytes (5 Goldilocks elements)
+    let message_fp5 = Fp5Element::from_bytes_le(&message).unwrap();
+    
+    println!("  Message Fp5: {}...", hex::encode(&message_fp5.to_bytes_le()[..16]));
+    
+    // Construct pre-image for hash: [R[0..5], message[0..5]]
+    let mut pre_image = [Goldilocks::zero(); 10];
+    pre_image[..5].copy_from_slice(&r_signing_encoded.0);
+    pre_image[5..].copy_from_slice(&message_fp5.0);
+    
+    println!("  Pre-image R elements:");
+    for (i, elem) in pre_image[..5].iter().enumerate() {
+        println!("    R[{}] = Goldilocks({})", i, elem.0);
+    }
+    println!("  Pre-image message elements:");
+    for (i, elem) in pre_image[5..].iter().enumerate() {
+        println!("    M[{}] = Goldilocks({})", i, elem.0);
+    }
+    
+    // Compute hash
+    let e_computed_fp5 = hash_to_quintic_extension(&pre_image);
+    let e_computed = ScalarField::from_fp5_element(&e_computed_fp5);
+    
+    println!("\n  e (from signature): {}", hex::encode(&e.to_bytes_le()));
+    println!("  e (computed from hash): {}", hex::encode(&e_computed.to_bytes_le()));
+    println!("  e matches: {}", e.0 == e_computed.0);
+    
+    if e.0 != e_computed.0 {
+        println!("  ❌ e from signature != e computed from hash!");
+        println!("  This means R encoding or hash computation is wrong!");
+    } else {
+        println!("  ✅ e matches! Hash computation is correct!");
+    }
+    
+    // Now verify using the actual verification function
+    let public_key_bytes = public_key_point.encode().to_bytes_le();
+    let is_valid = goldilocks_crypto::verify_signature(&signature, &message, &public_key_bytes).unwrap();
+    
+    println!("\n=== Final Verification ===");
+    println!("  Verification result: {}", if is_valid { "✅ VALID" } else { "❌ INVALID" });
+}
+

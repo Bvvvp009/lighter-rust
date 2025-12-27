@@ -8,7 +8,6 @@ Welcome to the Rust Signer documentation. This documentation covers all aspects 
 
 ## Running Examples
 
-- **[Examples README](../api-client/examples/README.md)** - Comprehensive guide for perpetual futures and spot trading examples
 - **[Running Examples](./running-examples.md)** - Guide on how to run all available examples, including prerequisites, troubleshooting, and best practices
 
 ## API Reference
@@ -17,7 +16,6 @@ Welcome to the Rust Signer documentation. This documentation covers all aspects 
 
 ## Library Documentation
 
-- **[API Client](./api-client.md)** - High-level HTTP client for interacting with the Lighter Protocol API
 - **[Signer](./signer.md)** - Cryptographic signer for transaction signing and key management
 - **[Crypto](./crypto.md)** - Low-level cryptographic primitives (Schnorr signatures, field arithmetic)
 - **[Poseidon Hash](./poseidon-hash.md)** - Poseidon2 hash function implementation
@@ -26,7 +24,6 @@ Welcome to the Rust Signer documentation. This documentation covers all aspects 
 
 - **[Architecture](./architecture.md)** - System architecture, design decisions, and component overview
 - **[Code Examples](./examples.md)** - Practical code examples and usage patterns
-- **[Examples README](../api-client/examples/README.md)** - Complete guide to all 24 examples (perpetual futures, spot trading, HFT, etc.)
 
 ## Troubleshooting
 
@@ -42,18 +39,16 @@ These libraries implement rare Rust primitives for Zero-Knowledge proof systems.
 
 ## Quick Links
 
-- **Client Initialization**: See [API Methods Reference - Client Initialization](./api-methods.md#client-initialization)
-- **Creating Orders**: See [API Methods Reference - Create Market Order](./api-methods.md#1-create-market-order) and [Create Limit Order](./api-methods.md#2-create-limit-order)
-- **Key Management**: See [API Methods Reference - Key Management](./api-methods.md#key-management-methods)
-- **Running Examples**: See [Running Examples Guide](./running-examples.md)
+- **Key Management**: See [Signer Documentation](./signer.md)
+- **Cryptographic Primitives**: See [Crypto Documentation](./crypto.md)
+- **Hash Functions**: See [Poseidon Hash Documentation](./poseidon-hash.md)
 
 ## Overview
 
-The Rust signer is organized into four main libraries:
+The Rust signer is organized into three core libraries:
 
 1. **`poseidon-hash`** - Poseidon2 hash function implementation
 2. **`crypto`** - Cryptographic primitives (Goldilocks field, ECgFp5 curve, Schnorr signatures)
 3. **`signer`** - High-level signing interface (KeyManager, transaction signing, auth tokens)
-4. **`api-client`** - HTTP client for API interactions (LighterClient)
 
 Each library can be used independently or together for a complete signing solution.

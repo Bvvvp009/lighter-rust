@@ -1,34 +1,66 @@
 use api_client::{LighterClient, CreateOrderRequest};
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Example: Create Stop Loss and Take Profit Orders
-/// 
-/// This example demonstrates how to create:
-/// - Stop Loss (SL) orders - Market orders that trigger at a specific price
-/// - Take Profit (TP) orders - Market orders that trigger at a specific price
-/// - Stop Loss Limit orders - Limit orders that trigger at a specific price
-/// - Take Profit Limit orders - Limit orders that trigger at a specific price
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "═".repeat(80));
-    println!("🛡️ CREATE STOP LOSS & TAKE PROFIT ORDERS EXAMPLE");
+    println!("🚀 CREATE STOP LOSS & TAKE PROFIT ORDERS EXAMPLE");
     println!("{}", "═".repeat(80));
     println!();
 
-    dotenv::dotenv().ok();
+    // Load .env file manually
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let mut env_file = current_dir.join(".env");
+    if !env_file.exists() {
+        env_file = current_dir.parent()
+            .map(|p| p.join(".env"))
+            .unwrap_or_else(|| current_dir.join(".env"));
+    }
+    if !env_file.exists() {
+        env_file = current_dir.parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join(".env"))
+            .unwrap_or_else(|| current_dir.join(".env"));
+    }
+    
+    if env_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&env_file) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') || line.starts_with("--") {
+                    continue;
+                }
+                if let Some(equal_pos) = line.find('=') {
+                    let key = line[..equal_pos].trim();
+                    let mut value = line[equal_pos + 1..].trim();
+                    value = value.trim_matches('"').trim_matches('\'');
+                    if value.starts_with("0x") || value.starts_with("0X") {
+                        value = &value[2..];
+                    }
+                    if !key.is_empty() && !value.is_empty() {
+                        std::env::set_var(key, value);
+                    }
+                }
+            }
+        }
+    }
 
-    // Load credentials from environment variables
-    // Create a .env file with: BASE_URL, ACCOUNT_INDEX, API_KEY_INDEX, API_PRIVATE_KEY
-    let base_url = env::var("BASE_URL")
-        .map_err(|_| "BASE_URL environment variable is required. Please set it in your .env file.")?;
-    let account_index: i64 = env::var("ACCOUNT_INDEX")
-        .map_err(|_| "ACCOUNT_INDEX environment variable is required. Please set it in your .env file.")?
-        .parse()?;
-    let api_key_index: u8 = env::var("API_KEY_INDEX")
-        .map_err(|_| "API_KEY_INDEX environment variable is required. Please set it in your .env file.")?
-        .parse()?;
-    let api_key = env::var("API_PRIVATE_KEY")
-        .map_err(|_| "API_PRIVATE_KEY environment variable is required. Please set it in your .env file.")?;
+    let base_url = env::var("BASE_URL")?;
+    let account_index: i64 = env::var("ACCOUNT_INDEX")?.parse()?;
+    let api_key_index: u8 = env::var("API_KEY_INDEX")?.parse()?;
+    let mut api_key = env::var("API_PRIVATE_KEY")?;
+    
+    // Clean private key
+    api_key = api_key.trim().to_string();
+    api_key = api_key.replace(" ", "").replace("\n", "").replace("\r", "").replace("\t", "");
+    if api_key.starts_with("0x") || api_key.starts_with("0X") {
+        api_key = api_key[2..].to_string();
+    }
+    let hex_only: String = api_key.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(80)
+        .collect();
 
     println!("📋 Configuration:");
     println!("  Base URL: {}", base_url);
@@ -36,149 +68,133 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  API Key Index: {}", api_key_index);
     println!();
 
-    let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
+    let client = LighterClient::new(base_url.clone(), &hex_only, account_index, api_key_index)?;
 
-    // Order type constants
-    // 0 = LimitOrder
-    // 1 = MarketOrder
-    // 2 = StopLossOrder (Market SL)
-    // 3 = StopLossLimitOrder (Limit SL)
-    // 4 = TakeProfitOrder (Market TP)
-    // 5 = TakeProfitLimitOrder (Limit TP)
+    let client_order_index_base = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_millis() as u64;
 
-    // Example 1: Take Profit Market Order
-    println!("{}", "─".repeat(80));
-    println!("📝 Example 1: Take Profit Market Order");
-    println!("{}", "─".repeat(80));
-    let tp_market = CreateOrderRequest {
+    // Create Take Profit Order (Type 4: TAKE_PROFIT)
+    println!("📝 Creating Take Profit Order...");
+    let tp_order = CreateOrderRequest {
         account_index,
         order_book_index: 0,
-        client_order_index: 20001,
-        base_amount: 1000,         // 0.1 ETH
-        price: 0,                   // Market order - price ignored
-        is_ask: false,             // Buy order (to close short position)
-        order_type: 4,             // TakeProfitOrder (Market)
-        time_in_force: 0,          // ImmediateOrCancel for market orders
-        reduce_only: true,         // Only reduce position
-        trigger_price: 500000,     // Trigger at $5000
+        client_order_index: client_order_index_base + 1,
+        base_amount: 1000,
+        price: 500000,
+        is_ask: false,
+        order_type: 4, // TAKE_PROFIT
+        time_in_force: 1, // GOOD_TILL_TIME
+        reduce_only: false,
+        trigger_price: 500000,
     };
 
-    println!("  Creating Take Profit Market Order:");
-    println!("    Trigger Price: ${}", tp_market.trigger_price as f64 / 100.0);
-    println!("    Amount: {}", tp_market.base_amount);
-    println!("    Type: Market Order");
-    let response = client.create_order(tp_market).await?;
-    let code = response["code"].as_i64().unwrap_or_default();
-    if code == 200 {
-        println!("  ✅ Take Profit Market Order created!");
-    } else {
-        println!("  ⚠️  Failed: {}", response["message"].as_str().unwrap_or("Unknown error"));
+    match client.create_order(tp_order).await {
+        Ok(response) => {
+            let code = response["code"].as_i64().unwrap_or_default();
+            if code == 200 {
+                println!("✅ Take Profit Order created successfully!");
+            } else {
+                println!("⚠️  Take Profit Order returned code: {}", code);
+                if let Some(msg) = response["message"].as_str() {
+                    println!("  Message: {}", msg);
+                }
+            }
+        }
+        Err(e) => println!("❌ Error creating Take Profit Order: {}", e),
     }
-    println!();
 
-    // Example 2: Stop Loss Market Order
-    println!("{}", "─".repeat(80));
-    println!("📝 Example 2: Stop Loss Market Order");
-    println!("{}", "─".repeat(80));
-    let sl_market = CreateOrderRequest {
+    // Create Stop Loss Order (Type 2: STOP_LOSS)
+    println!("\n📝 Creating Stop Loss Order...");
+    let sl_order = CreateOrderRequest {
         account_index,
         order_book_index: 0,
-        client_order_index: 20002,
-        base_amount: 1000,         // 0.1 ETH
-        price: 0,                   // Market order - price ignored
-        is_ask: false,             // Buy order (to close short position)
-        order_type: 2,             // StopLossOrder (Market)
-        time_in_force: 0,          // ImmediateOrCancel for market orders
-        reduce_only: true,         // Only reduce position
-        trigger_price: 450000,     // Trigger at $4500
+        client_order_index: client_order_index_base + 2,
+        base_amount: 1000,
+        price: 500000,
+        is_ask: false,
+        order_type: 2, // STOP_LOSS
+        time_in_force: 1, // GOOD_TILL_TIME
+        reduce_only: false,
+        trigger_price: 500000,
     };
 
-    println!("  Creating Stop Loss Market Order:");
-    println!("    Trigger Price: ${}", sl_market.trigger_price as f64 / 100.0);
-    println!("    Amount: {}", sl_market.base_amount);
-    println!("    Type: Market Order");
-    let response = client.create_order(sl_market).await?;
-    let code = response["code"].as_i64().unwrap_or_default();
-    if code == 200 {
-        println!("  ✅ Stop Loss Market Order created!");
-    } else {
-        println!("  ⚠️  Failed: {}", response["message"].as_str().unwrap_or("Unknown error"));
+    match client.create_order(sl_order).await {
+        Ok(response) => {
+            let code = response["code"].as_i64().unwrap_or_default();
+            if code == 200 {
+                println!("✅ Stop Loss Order created successfully!");
+            } else {
+                println!("⚠️  Stop Loss Order returned code: {}", code);
+                if let Some(msg) = response["message"].as_str() {
+                    println!("  Message: {}", msg);
+                }
+            }
+        }
+        Err(e) => println!("❌ Error creating Stop Loss Order: {}", e),
     }
-    println!();
 
-    // Example 3: Take Profit Limit Order
-    println!("{}", "─".repeat(80));
-    println!("📝 Example 3: Take Profit Limit Order");
-    println!("{}", "─".repeat(80));
-    let tp_limit = CreateOrderRequest {
+    // Create Take Profit Limit Order (Type 5: TAKE_PROFIT_LIMIT)
+    println!("\n📝 Creating Take Profit Limit Order...");
+    let tp_limit_order = CreateOrderRequest {
         account_index,
         order_book_index: 0,
-        client_order_index: 20003,
-        base_amount: 1000,         // 0.1 ETH
-        price: 500000,             // Limit price $5000
-        is_ask: false,             // Buy order (to close short position)
-        order_type: 5,             // TakeProfitLimitOrder
-        time_in_force: 1,          // GoodTillTime
-        reduce_only: true,         // Only reduce position
-        trigger_price: 500000,     // Trigger at $5000
+        client_order_index: client_order_index_base + 3,
+        base_amount: 1000,
+        price: 500000,
+        is_ask: false,
+        order_type: 5, // TAKE_PROFIT_LIMIT
+        time_in_force: 1, // GOOD_TILL_TIME
+        reduce_only: false,
+        trigger_price: 500000,
     };
 
-    println!("  Creating Take Profit Limit Order:");
-    println!("    Trigger Price: ${}", tp_limit.trigger_price as f64 / 100.0);
-    println!("    Limit Price: ${}", tp_limit.price as f64 / 100.0);
-    println!("    Amount: {}", tp_limit.base_amount);
-    println!("    Type: Limit Order");
-    let response = client.create_order(tp_limit).await?;
-    let code = response["code"].as_i64().unwrap_or_default();
-    if code == 200 {
-        println!("  ✅ Take Profit Limit Order created!");
-    } else {
-        println!("  ⚠️  Failed: {}", response["message"].as_str().unwrap_or("Unknown error"));
+    match client.create_order(tp_limit_order).await {
+        Ok(response) => {
+            let code = response["code"].as_i64().unwrap_or_default();
+            if code == 200 {
+                println!("✅ Take Profit Limit Order created successfully!");
+            } else {
+                println!("⚠️  Take Profit Limit Order returned code: {}", code);
+                if let Some(msg) = response["message"].as_str() {
+                    println!("  Message: {}", msg);
+                }
+            }
+        }
+        Err(e) => println!("❌ Error creating Take Profit Limit Order: {}", e),
     }
-    println!();
 
-    // Example 4: Stop Loss Limit Order
-    println!("{}", "─".repeat(80));
-    println!("📝 Example 4: Stop Loss Limit Order");
-    println!("{}", "─".repeat(80));
-    let sl_limit = CreateOrderRequest {
+    // Create Stop Loss Limit Order (Type 3: STOP_LOSS_LIMIT)
+    println!("\n📝 Creating Stop Loss Limit Order...");
+    let sl_limit_order = CreateOrderRequest {
         account_index,
         order_book_index: 0,
-        client_order_index: 20004,
-        base_amount: 1000,         // 0.1 ETH
-        price: 450000,             // Limit price $4500
-        is_ask: false,             // Buy order (to close short position)
-        order_type: 3,             // StopLossLimitOrder
-        time_in_force: 1,          // GoodTillTime
-        reduce_only: true,         // Only reduce position
-        trigger_price: 450000,     // Trigger at $4500
+        client_order_index: client_order_index_base + 4,
+        base_amount: 1000,
+        price: 500000,
+        is_ask: false,
+        order_type: 3, // STOP_LOSS_LIMIT
+        time_in_force: 1, // GOOD_TILL_TIME
+        reduce_only: false,
+        trigger_price: 500000,
     };
 
-    println!("  Creating Stop Loss Limit Order:");
-    println!("    Trigger Price: ${}", sl_limit.trigger_price as f64 / 100.0);
-    println!("    Limit Price: ${}", sl_limit.price as f64 / 100.0);
-    println!("    Amount: {}", sl_limit.base_amount);
-    println!("    Type: Limit Order");
-    let response = client.create_order(sl_limit).await?;
-    let code = response["code"].as_i64().unwrap_or_default();
-    if code == 200 {
-        println!("  ✅ Stop Loss Limit Order created!");
-    } else {
-        println!("  ⚠️  Failed: {}", response["message"].as_str().unwrap_or("Unknown error"));
+    match client.create_order(sl_limit_order).await {
+        Ok(response) => {
+            let code = response["code"].as_i64().unwrap_or_default();
+            if code == 200 {
+                println!("✅ Stop Loss Limit Order created successfully!");
+            } else {
+                println!("⚠️  Stop Loss Limit Order returned code: {}", code);
+                if let Some(msg) = response["message"].as_str() {
+                    println!("  Message: {}", msg);
+                }
+            }
+        }
+        Err(e) => println!("❌ Error creating Stop Loss Limit Order: {}", e),
     }
-    println!();
-
-    println!("{}", "═".repeat(80));
-    println!("✅ SL/TP Examples Complete");
-    println!("{}", "═".repeat(80));
-    println!();
-    println!("💡 Key Points:");
-    println!("  • Stop Loss: Triggers when price moves against you");
-    println!("  • Take Profit: Triggers when price moves in your favor");
-    println!("  • Market Orders: Execute immediately at trigger");
-    println!("  • Limit Orders: Wait for price to reach limit after trigger");
-    println!("  • reduce_only: true ensures orders only close positions");
 
     Ok(())
 }
+
 

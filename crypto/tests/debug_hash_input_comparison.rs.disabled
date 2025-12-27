@@ -1,0 +1,131 @@
+//! Compare exact hash input bytes to find the discrepancy
+
+use goldilocks_crypto::{ScalarField, Point, Fp5Element};
+use poseidon_hash::{hash_to_quintic_extension, Goldilocks};
+use hex;
+
+#[test]
+fn test_hash_input_comparison() {
+    println!("\n=== Comparing Hash Input Bytes ===\n");
+    
+    // Go signature from cross_validation.rs
+    let private_key_hex = "01000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let public_key_hex = "04000000000000000000000000000000000000000000000000000000000000000000000000000000";
+    let message_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627";
+    let signature_hex = "f026eefe094088d8d21ebad69565715f7a8a1fe27e5a7c0401e5cbd384aa902953597975f447be70f2d89d958c99870fca816a00a4f61689bf7b98ed67a5837b151b342c6c556f56b4a6860a09b8410f";
+    
+    let private_key = hex::decode(private_key_hex).unwrap();
+    let public_key = hex::decode(public_key_hex).unwrap();
+    let message = hex::decode(message_hex).unwrap();
+    let signature = hex::decode(signature_hex).unwrap();
+    
+    let s = ScalarField::from_bytes_le(&signature[..40]).unwrap();
+    let e = ScalarField::from_bytes_le(&signature[40..]).unwrap();
+    let sk = ScalarField::from_bytes_le(&private_key).unwrap();
+    
+    // Reconstruct k and compute R
+    let e_sk = e.mul(&sk);
+    let e_sk_canonical = e_sk.to_canonical();
+    let k = s.add(e_sk_canonical);
+    
+    let generator = Point::generator();
+    let expected_r = generator.mul(&k);
+    let expected_r_encoded = expected_r.encode();
+    
+    // Compute R using verification
+    let public_key_fp5 = Fp5Element::from_bytes_le(&public_key).unwrap();
+    let public_point = Point::decode(&public_key_fp5).unwrap();
+    let e_adjusted = e.monty_mul(&ScalarField::ONE);
+    let computed_r = Point::mul_add2(&generator, &public_point, &s, &e_adjusted);
+    let computed_r_encoded = computed_r.encode();
+    
+    println!("R comparison:");
+    println!("  Expected R: {}", hex::encode(&expected_r_encoded.to_bytes_le()));
+    println!("  Computed R: {}", hex::encode(&computed_r_encoded.to_bytes_le()));
+    println!("  Match: {}", expected_r_encoded.0.iter().zip(computed_r_encoded.0.iter())
+        .all(|(a, b)| a.0 == b.0));
+    
+    // Convert message using message_to_fp5 logic
+    let mut message_elements = [Goldilocks::zero(); 5];
+    for (i, chunk) in message.chunks(8).enumerate().take(5) {
+        let mut bytes = [0u8; 8];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        bytes.reverse();
+        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_be_bytes(bytes));
+    }
+    let message_fp5 = Fp5Element(message_elements);
+    
+    // Construct pre-image for hash
+    let mut pre_image = [Goldilocks::zero(); 10];
+    pre_image[..5].copy_from_slice(&computed_r_encoded.0);
+    pre_image[5..].copy_from_slice(&message_fp5.0);
+    
+    println!("\nHash pre-image (as Goldilocks values):");
+    println!("  R elements:");
+    for (i, elem) in pre_image[..5].iter().enumerate() {
+        println!("    R[{}] = Goldilocks({}) = 0x{:016x}", i, elem.0, elem.0);
+    }
+    println!("  Message elements:");
+    for (i, elem) in pre_image[5..].iter().enumerate() {
+        println!("    M[{}] = Goldilocks({}) = 0x{:016x}", i, elem.0, elem.0);
+    }
+    
+    // Compute hash
+    let e_prime_fp5 = hash_to_quintic_extension(&pre_image);
+    let e_prime = ScalarField::from_fp5_element(&e_prime_fp5);
+    
+    println!("\nHash result:");
+    println!("  e (from signature): {}", hex::encode(&e.to_bytes_le()));
+    println!("  e' (computed): {}", hex::encode(&e_prime.to_bytes_le()));
+    println!("  Match: {}", e.0 == e_prime.0);
+    
+    // Check if maybe we need to use expected_r instead of computed_r
+    println!("\n=== Trying with Expected R ===");
+    let mut pre_image_expected = [Goldilocks::zero(); 10];
+    pre_image_expected[..5].copy_from_slice(&expected_r_encoded.0);
+    pre_image_expected[5..].copy_from_slice(&message_fp5.0);
+    
+    let e_prime_expected_fp5 = hash_to_quintic_extension(&pre_image_expected);
+    let e_prime_expected = ScalarField::from_fp5_element(&e_prime_expected_fp5);
+    
+    println!("  e' (with expected R): {}", hex::encode(&e_prime_expected.to_bytes_le()));
+    println!("  Match: {}", e.0 == e_prime_expected.0);
+    
+    // Check if R encoding is the issue - maybe we need to use raw bytes?
+    println!("\n=== Checking R Encoding ===");
+    println!("  R encoded bytes: {}", hex::encode(&computed_r_encoded.to_bytes_le()));
+    println!("  R encoded as Fp5Element: {:?}", computed_r_encoded.0.iter().map(|g| g.0).collect::<Vec<_>>());
+    
+    // Check if message encoding matches
+    println!("\n=== Checking Message Encoding ===");
+    println!("  Message bytes: {}", message_hex);
+    println!("  Message as Fp5Element: {:?}", message_fp5.0.iter().map(|g| g.0).collect::<Vec<_>>());
+    
+    // Try direct bytes interpretation (no reversal)
+    println!("\n=== Trying Direct Bytes (No Reversal) ===");
+    let mut message_elements_direct = [Goldilocks::zero(); 5];
+    for (i, chunk) in message.chunks(8).enumerate().take(5) {
+        let mut bytes = [0u8; 8];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        // Direct little-endian interpretation
+        message_elements_direct[i] = Goldilocks::from_canonical_u64(u64::from_le_bytes(bytes));
+    }
+    let message_fp5_direct = Fp5Element(message_elements_direct);
+    
+    let mut pre_image_direct = [Goldilocks::zero(); 10];
+    pre_image_direct[..5].copy_from_slice(&computed_r_encoded.0);
+    pre_image_direct[5..].copy_from_slice(&message_fp5_direct.0);
+    
+    let e_prime_direct_fp5 = hash_to_quintic_extension(&pre_image_direct);
+    let e_prime_direct = ScalarField::from_fp5_element(&e_prime_direct_fp5);
+    
+    println!("  e' (direct bytes, no reversal): {}", hex::encode(&e_prime_direct.to_bytes_le()));
+    println!("  Match: {}", e.0 == e_prime_direct.0);
+}
+
+
+
+
+
+
+

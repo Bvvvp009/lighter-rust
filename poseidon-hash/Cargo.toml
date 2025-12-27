@@ -18,4 +18,7 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 default = []
 serde = ["dep:serde"]
 
+[dev-dependencies]
+hex = "0.4"
+
 

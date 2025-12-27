@@ -1,0 +1,64 @@
+//! Debug test to verify to_canonical() works correctly
+
+use goldilocks_crypto::ScalarField;
+use hex;
+
+#[test]
+fn test_to_canonical() {
+    println!("\n=== Debug: to_canonical() ===\n");
+    
+    // Test with a simple scalar
+    let scalar = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 5; // scalar = 5
+        bytes
+    }).unwrap();
+    
+    println!("scalar (canonical): {}...", hex::encode(&scalar.to_bytes_le()[..8]));
+    
+    // Convert to Montgomery form
+    let scalar_montgomery = scalar.monty_mul(&ScalarField::R2);
+    println!("scalar (Montgomery): {}...", hex::encode(&scalar_montgomery.to_bytes_le()[..8]));
+    
+    // Convert back to canonical
+    let scalar_back = scalar_montgomery.to_canonical();
+    println!("scalar (back to canonical): {}...", hex::encode(&scalar_back.to_bytes_le()[..8]));
+    println!("scalar == scalar_back: {}", scalar.to_bytes_le() == scalar_back.to_bytes_le());
+    
+    // Test: what if we multiply by ONE directly?
+    let scalar_back_one = scalar_montgomery.monty_mul(&ScalarField::ONE);
+    println!("scalar (Montgomery * ONE): {}...", hex::encode(&scalar_back_one.to_bytes_le()[..8]));
+    println!("scalar == scalar_back_one: {}", scalar.to_bytes_le() == scalar_back_one.to_bytes_le());
+    
+    // Test with e*sk
+    println!("\n=== Testing with e*sk ===");
+    let e = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 3; // e = 3
+        bytes
+    }).unwrap();
+    
+    let sk = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 7; // sk = 7
+        bytes
+    }).unwrap();
+    
+    println!("e: {}...", hex::encode(&e.to_bytes_le()[..8]));
+    println!("sk: {}...", hex::encode(&sk.to_bytes_le()[..8]));
+    
+    let e_sk = e.mul(&sk); // Returns Montgomery form
+    println!("e*sk (Montgomery): {}...", hex::encode(&e_sk.to_bytes_le()[..8]));
+    
+    let e_sk_canonical = e_sk.to_canonical();
+    println!("e*sk (canonical): {}...", hex::encode(&e_sk_canonical.to_bytes_le()[..8]));
+    
+    // Expected: e*sk = 3*7 = 21
+    let expected = ScalarField::from_bytes_le(&{
+        let mut bytes = [0u8; 40];
+        bytes[0] = 21; // expected = 21
+        bytes
+    }).unwrap();
+    println!("expected (21): {}...", hex::encode(&expected.to_bytes_le()[..8]));
+    println!("e*sk (canonical) == expected: {}", e_sk_canonical.to_bytes_le() == expected.to_bytes_le());
+}

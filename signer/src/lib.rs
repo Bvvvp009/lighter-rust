@@ -1,4 +1,4 @@
-use goldilocks_crypto::{schnorr::{sign_with_nonce}, ScalarField, Goldilocks};
+use goldilocks_crypto::{ScalarField, Goldilocks};
 use thiserror::Error;
 use hex;
 
@@ -31,7 +31,7 @@ impl KeyManager {
         Ok(Self { private_key })
     }
     
-        pub fn from_hex(hex_str: &str) -> Result<Self> {
+    pub fn from_hex(hex_str: &str) -> Result<Self> {
         let hex_str = if hex_str.starts_with("0x") {
             &hex_str[2..]
         } else {
@@ -71,7 +71,8 @@ impl KeyManager {
     
     fn sign_with_fixed_nonce(&self, message: &[u8; 40], nonce_bytes: &[u8]) -> Result<[u8; 80]> {
         let pk_bytes = self.private_key.to_bytes_le();
-        let signature = sign_with_nonce(&pk_bytes, message, nonce_bytes)?;
+        // message is already a Poseidon2 hash (40 bytes), use sign_hashed_message
+        let signature = goldilocks_crypto::sign_hashed_message(&pk_bytes, message, nonce_bytes)?;
         
         let mut result = [0u8; 80];
         result.copy_from_slice(&signature);
@@ -84,14 +85,14 @@ impl KeyManager {
         account_index: i64,
         api_key_index: u8,
     ) -> Result<String> {
-        // Construct auth token message: "deadline:account_index:api_key_index"
+        // Match Go: ConstructAuthToken format "deadline:account_index:api_key_index"
         let auth_data = format!("{}:{}:{}", deadline, account_index, api_key_index);
         
         // Convert message bytes to Goldilocks elements
         let auth_bytes = auth_data.as_bytes();
         
-        // CRITICAL: Pad each 8-byte chunk individually
-        // Calculate missing bytes: (8 - len(in) % 8) % 8, then pad the last chunk with zeros
+        // CRITICAL: Match Go's ArrayFromCanonicalLittleEndianBytes logic
+        // Calculate padding only for the last incomplete chunk
         let missing = (8 - auth_bytes.len() % 8) % 8;
         
         let mut elements = Vec::new();
@@ -105,9 +106,9 @@ impl KeyManager {
             let mut bytes = [0u8; 8];
             bytes[..chunk.len()].copy_from_slice(chunk);
             
-            // Pad only the last chunk if needed
+            // Pad with zeros ONLY if this is the last chunk and it's incomplete
             if chunk.len() < 8 && missing > 0 {
-                bytes[chunk.len()..].fill(0);
+                // The padding is already in bytes since we initialized with zeros
             }
             
             // Read as little-endian u64, then convert to Goldilocks
@@ -117,7 +118,7 @@ impl KeyManager {
             i = next_start;
         }
         
-        // Hash the elements using Poseidon2 to produce a quintic extension field element
+        // Hash the elements using Poseidon2 (matching Go's HashToQuinticExtension)
         use poseidon_hash::hash_to_quintic_extension;
         let hash_fp5 = hash_to_quintic_extension(&elements);
         

@@ -1,0 +1,90 @@
+//! Debug scalar comparison to understand verification failures
+
+use goldilocks_crypto::{ScalarField, Point, sign, verify_signature};
+use goldilocks_crypto::schnorr::sign_with_nonce;
+use hex;
+
+#[test]
+fn test_scalar_comparison_debug() {
+    println!("\n=== Scalar Comparison Debug ===\n");
+    
+    let private_key = ScalarField::sample_crypto();
+    let private_key_bytes = private_key.to_bytes_le();
+    
+    let public_key_point = Point::generator().mul(&private_key);
+    let public_key_bytes = public_key_point.encode().to_bytes_le();
+    
+    let message = [0u8; 40];
+    
+    // Sign with fixed nonce for reproducibility
+    let mut nonce_bytes = [0u8; 40];
+    nonce_bytes[0] = 1;
+    
+    let signature = sign_with_nonce(&private_key_bytes, &message, &nonce_bytes)
+        .expect("Failed to sign");
+    
+    // Extract e from signature
+    let e_bytes = &signature[40..80];
+    let e_from_sig = ScalarField::from_bytes_le(e_bytes)
+        .expect("Failed to parse e");
+    
+    println!("e from signature:");
+    println!("  Bytes: {}", hex::encode(e_bytes));
+    println!("  Limbs: {:?}", e_from_sig.0);
+    
+    // Verify and extract computed e'
+    let s_bytes = &signature[0..40];
+    let s = ScalarField::from_bytes_le(s_bytes).expect("Failed to parse s");
+    let e = ScalarField::from_bytes_le(e_bytes).expect("Failed to parse e");
+    
+    // Reconstruct R
+    let generator = Point::generator();
+    let public_point = Point::decode(&goldilocks_crypto::Fp5Element::from_bytes_le(&public_key_bytes).unwrap())
+        .expect("Failed to decode public key");
+    
+    let s_g = generator.mul(&s);
+    let e_pk = public_point.mul(&e);
+    let r_point = s_g.add(&e_pk);
+    let r_encoded = r_point.encode();
+    
+    // Compute e' = H(R || message)
+    use poseidon_hash::hash_to_quintic_extension;
+    use goldilocks_crypto::Fp5Element;
+    
+    // Convert message to Fp5Element (same way verify_signature does it)
+    // We'll use from_bytes_le directly since message is already 40 bytes
+    let message_fp5 = Fp5Element::from_bytes_le(&message).expect("Failed to convert message");
+    let mut pre_image = [poseidon_hash::Goldilocks::zero(); 10];
+    pre_image[..5].copy_from_slice(&r_encoded.0);
+    pre_image[5..].copy_from_slice(&message_fp5.0);
+    
+    let e_prime_fp5 = hash_to_quintic_extension(&pre_image);
+    let e_prime_scalar = ScalarField::from_fp5_element(&e_prime_fp5);
+    
+    println!("\ne' computed from hash:");
+    println!("  Bytes: {}", hex::encode(&e_prime_scalar.to_bytes_le()));
+    println!("  Limbs: {:?}", e_prime_scalar.0);
+    
+    // Compare
+    println!("\nComparison:");
+    println!("  e limbs == e' limbs: {}", e_from_sig.0 == e_prime_scalar.0);
+    println!("  e.equals(e'): {}", e_from_sig.equals(&e_prime_scalar));
+    
+    // Check if they're equal modulo N
+    let diff = e_from_sig.sub(e_prime_scalar);
+    println!("  e - e' limbs: {:?}", diff.0);
+    println!("  e - e' == 0: {}", diff.is_zero());
+    
+    // Check if e - e' == N (modular equivalence)
+    let n = ScalarField::N;
+    let diff_plus_n = diff.add(n);
+    println!("  (e - e') + N limbs: {:?}", diff_plus_n.0);
+    println!("  (e - e') + N == 0: {}", diff_plus_n.is_zero());
+    
+    // Final verification
+    let is_valid = verify_signature(&signature, &message, &public_key_bytes)
+        .expect("Failed to verify");
+    
+    println!("\nVerification result: {}", if is_valid { "✅ VALID" } else { "❌ INVALID" });
+}
+

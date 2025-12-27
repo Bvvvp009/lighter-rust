@@ -4,13 +4,10 @@ High-level architecture and design of the Rust Signer implementation.
 
 ## System Architecture
 
-The Rust signer is organized into four layers, each building on the previous:
+The Rust signer is organized into three layers, each building on the previous:
 
 ```
 ┌─────────────────────────────────────┐
-│        API Client Layer             │  HTTP client, transaction building
-│      (api-client crate)             │
-├─────────────────────────────────────┤
 │         Signer Layer                │  Key management, message signing
 │        (signer crate)               │
 ├─────────────────────────────────────┤
@@ -72,39 +69,20 @@ The Rust signer is organized into four layers, each building on the previous:
 
 **Dependencies**: `crypto`, `poseidon-hash`
 
-### 4. API Client Layer (`api-client`)
-
-**Purpose**: HTTP client for Lighter Exchange API
-
-**Responsibilities**:
-- HTTP request handling
-- Transaction construction and signing
-- Nonce management
-- Order submission
-- Error handling and retries
-
-**Key Types**:
-- `LighterClient`: Main API client
-- `CreateOrderRequest`: Order structure
-
-**Dependencies**: `signer`, `crypto`, `poseidon-hash`
-
 ## Data Flow
 
 ### Transaction Signing Flow
 
 ```
-1. User creates order request
+1. User prepares transaction data
    ↓
-2. API Client constructs transaction JSON
+2. Transaction hash computed (Poseidon2)
    ↓
-3. Transaction hash computed (Poseidon2)
+3. Signer signs hash (Schnorr signature)
    ↓
-4. Signer signs hash (Schnorr signature)
+4. Signed transaction ready for submission
    ↓
-5. Signed transaction submitted to API
-   ↓
-6. Exchange verifies signature
+5. Exchange verifies signature
 ```
 
 ### Key Generation Flow
@@ -161,8 +139,6 @@ PoseidonHashError (poseidon-hash)
 CryptoError (crypto)
     ↓
 SignerError (signer)
-    ↓
-ApiError (api-client)
 ```
 
 Each layer wraps errors from lower layers.
@@ -204,4 +180,3 @@ The layered design allows for:
 - [Poseidon Hash Documentation](./poseidon-hash.md)
 - [Crypto Documentation](./crypto.md)
 - [Signer Documentation](./signer.md)
-- [API Client Documentation](./api-client.md)

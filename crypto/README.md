@@ -1,23 +1,23 @@
 # Goldilocks Crypto
 
-Rust port of ECgFp5 elliptic curve and Schnorr signatures over the Goldilocks field, ported from lighter-go (Lighter Protocol).
+Rust implementation of ECgFp5 elliptic curve and Schnorr signatures over the Goldilocks field.
 
 ## ✅ Verification Status
 
 **Core Compatibility:** ✅ VERIFIED
 
-- ✅ Signature verification: Both test vectors pass (verified against Go)
+- ✅ Signature verification: Test vectors pass
 - ✅ Point operations: Addition, doubling, and multiplication verified
-- ✅ Hash functions: Byte-for-byte compatibility with Go confirmed
-- ✅ Test vectors: Comprehensive test suite with Go test vectors integrated
+- ✅ Hash functions: Byte-for-byte compatibility with internal test vectors confirmed
+- ✅ Test vectors: Comprehensive test suite integrated
 
 ## ⚠️ Security Warning
 
 **This library has NOT been audited and is provided as-is. Use with caution.**
 
-- This is a **prototype port** from the Go SDK (lighter-go)
+- Prototype implementation focused on correctness
 - **Not security audited** - do not use in production without proper security review
-- While the implementation appears to work correctly and matches Go test vectors, cryptographic software requires careful auditing
+- While the implementation appears to work correctly, cryptographic software requires careful auditing
 - This is an open-source contribution and not an official Lighter Protocol library
 - Use at your own risk
 

@@ -17,61 +17,125 @@ API_KEY_INDEX=<your_api_key_index>
 API_PRIVATE_KEY=<your_private_key_hex>
 ```
 
-## Examples
+## Examples (23 examples - Order Management & Leverage Control)
 
-### test_single_order
-Basic example that submits a single market order.
+### Order Management
 
+#### Basic Orders
+
+**create_market_buy** - Buy order at market price
 ```bash
-cargo run --example test_single_order --release
+cargo run --example create_market_buy --release
 ```
 
-Uses environment variables or falls back to defaults. Output shows the order response code and transaction hash on success.
+**create_market_sell** - Sell order at market price
+```bash
+cargo run --example create_market_sell --release
+```
 
-### create_market_order
-Creates a market order with configurable parameters.
-
+**create_market_order** - Market order with configurable parameters
 ```bash
 cargo run --example create_market_order --release
 ```
 
-### create_limit_order
-Creates a limit order with a specified price level.
+**create_market_with_slippage** - Market order with slippage protection
+```bash
+cargo run --example create_market_with_slippage --release
+```
 
+**create_limit_order** - Limit order at specific price
 ```bash
 cargo run --example create_limit_order --release
 ```
 
-### cancel_order
-Cancels a previously created order.
+**create_modify_cancel_flow** - Full lifecycle: create → modify → cancel
+```bash
+cargo run --example create_modify_cancel_flow --release
+```
 
+**modify_order** - Modify an existing order
+```bash
+cargo run --example modify_order --release
+```
+
+**cancel_order** - Cancel a single order
 ```bash
 cargo run --example cancel_order --release
 ```
 
-### stress_market_orders
-Stress test that submits multiple market orders sequentially.
+**cancel_all_orders** - Cancel all open orders
+```bash
+cargo run --example cancel_all_orders --release
+```
 
+#### Advanced Orders
+
+**create_sl_tp** - Create Stop Loss and Take Profit orders
+```bash
+cargo run --example create_sl_tp --release
+```
+
+**grouped_order_sl_tp** - Grouped order structure with attached SL/TP
+```bash
+cargo run --example grouped_order_sl_tp --release
+```
+
+**close_position** - Close an entire position with market order
+```bash
+cargo run --example close_position --release
+```
+
+### Margin & Leverage
+
+**update_leverage_cross_20x** - Set 20x cross margin leverage
+```bash
+cargo run --example update_leverage_cross_20x --release
+```
+
+**update_leverage_isolated_50x** - Set 50x isolated margin leverage
+```bash
+cargo run --example update_leverage_isolated_50x --release
+```
+
+### Sub-Accounts
+
+**create_sub_account** - Create a new sub-account
+```bash
+cargo run --example create_sub_account --release
+```
+
+### Authentication & Setup
+
+**create_auth_token** - Generate authentication token
+```bash
+cargo run --example create_auth_token --release
+```
+
+**setup_api_key** - Setup and validate API key
+```bash
+cargo run --example setup_api_key --release
+```
+
+**check_api_key** - Validate API key configuration
+```bash
+cargo run --example check_api_key --release
+```
+
+### Performance & Utilities
+
+**send_tx_batch** - Batch multiple transactions together
+```bash
+cargo run --example send_tx_batch --release
+```
+
+**stress_market_orders** - Stress test with multiple orders
 ```bash
 STRESS_COUNT=100 STRESS_DELAY_MS=500 cargo run --example stress_market_orders --release
 ```
 
-Configuration:
-- `STRESS_COUNT`: Number of orders to submit (default: 1000)
-- `STRESS_DELAY_MS`: Milliseconds between orders (default: 300)
-
-### transfer_update_leverage
-Examples for transferring funds and updating leverage.
-
+**benchmark_stress** - Performance benchmark
 ```bash
-cargo run --example transfer_update_leverage --release
-```
-
-### check_api_key
-Validates your API key configuration.
-
-```bash
-cargo run --example check_api_key --release
+cargo run --example benchmark_stress --release
 ```
 
 ## Signature Fix (December 2025)

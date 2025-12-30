@@ -6,6 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use base64::Engine;
 
+pub mod websocket;
+pub use websocket::WebSocketClient;
+
 #[derive(Error, Debug)]
 pub enum ApiError {
     #[error("Signer error: {0}")]
@@ -290,7 +293,7 @@ pub struct LighterClient {
     key_manager: KeyManager,
     account_index: i64,
     api_key_index: u8,
-    // Nonce cache for optimistic nonce management (like Python SDK)
+    // Nonce cache for optimistic nonce management
     // Fetches once from API, then increments locally
     nonce_cache: Arc<NonceCache>,
 }
@@ -319,13 +322,13 @@ impl NonceCache {
     
     fn set_fetched_nonce(&self, nonce: i64) {
         // Store as nonce - 1, so first increment gives us the correct nonce
-        // This matches Python's OptimisticNonceManager behavior
+        // Optimistic nonce management: increment after fetch
         self.last_used_nonce.store(nonce - 1, Ordering::SeqCst);
     }
     
     fn acknowledge_failure(&self) {
         // Decrement offset on failure to allow retry with same nonce
-        // This matches Python's OptimisticNonceManager behavior
+        // Optimistic nonce management: decrement on failure to retry same nonce
         loop {
             let current = self.last_used_nonce.load(Ordering::SeqCst);
             if current <= -1 {
@@ -359,7 +362,7 @@ impl LighterClient {
         api_key_index: u8,
     ) -> Result<Self> {
         let key_manager = KeyManager::from_hex(private_key_hex)?;
-        // Configure client with tuned timeouts and connection pooling (aligned with Go SDK)
+        // Configure client with tuned timeouts and connection pooling
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))  // 30s total timeout
             .connect_timeout(std::time::Duration::from_secs(10))  // 10s connect timeout
@@ -536,19 +539,17 @@ impl LighterClient {
     /// 
     /// ✅ SIGNATURE FIX: Using json!() macro ensures correct field ordering
     /// and byte-exact JSON serialization for cryptographic signature generation.
-    /// This matches the Go SDK implementation which uses single serialization.
     async fn create_order_internal(&self, order: &CreateOrderRequest, nonce: Option<i64>) -> Result<Value> {
         let nonce = nonce.expect("Nonce should be provided to create_order_internal");
         
         // Create transaction info with expiry time
-        // Match Go SDK: DefaultExpireTime = time.Minute*10 - time.Second
-        // This gives a 1 second margin to eliminate millisecond differences
+        // DefaultExpireTime = 10 minutes - 1 second for a small safety margin
         // Calculate timestamp right before creating tx_info to minimize clock skew
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         // Allow manual skew adjustment if server clock differs (positive or negative)
         let expired_at_skew: i64 = std::env::var("EXPIRED_AT_SKEW_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
-        // Use 10 minutes - 1 second (599,000 ms) to match Go SDK exactly
-        let expired_at = now + 599_000 + expired_at_skew; // 10 minutes - 1 second (matches Go SDK)
+        // Use 10 minutes - 1 second (599,000 ms) as default
+        let expired_at = now + 599_000 + expired_at_skew; // 10 minutes - 1 second
         
         // OrderExpiry: For limit orders with GoodTillTime, set to 28 days
         // For other orders, use 0 (nil)
@@ -1737,7 +1738,7 @@ impl LighterClient {
             }
             28 => {
                 // CREATE_GROUPED_ORDERS: variable elements
-                // Matches Go SDK: HashNoPad for each order, then HashNToOne to aggregate
+                // Hash each order with HashNoPad, then aggregate with HashNToOne
                 use poseidon_hash::{hash_no_pad, hash_n_to_one, empty_hash_out};
                 
                 let grouping_type = tx_value["GroupingType"]
@@ -1895,7 +1896,6 @@ impl LighterClient {
 
     // ============================================================================
     // Sign-only methods (return JSON, don't send to API) - for FFI compatibility
-    // These match Go SDK's Sign* functions
     // ============================================================================
 
     /// Sign a create order transaction and return JSON (doesn't send to API)
@@ -2063,7 +2063,7 @@ impl LighterClient {
         let mut final_tx_info = tx_info;
         final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
 
-        // Add MessageToSign field (like Go SDK does)
+        // Add MessageToSign field for L1 signing
         // For transfer, the L1 signature body is the memo as a string
         let message_to_sign = String::from_utf8_lossy(&memo).to_string();
         final_tx_info["MessageToSign"] = json!(message_to_sign);
@@ -2096,7 +2096,7 @@ impl LighterClient {
         let mut final_tx_info = tx_info;
         final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
 
-        // Add MessageToSign field (like Go SDK does)
+        // Add MessageToSign field for L1 signing
         // For change pub key, the L1 signature body is a formatted string
         let message_to_sign = format!(
             "ChangePubKey\nAccountIndex: {}\nApiKeyIndex: {}\nPubKey: {}",

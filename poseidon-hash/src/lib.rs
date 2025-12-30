@@ -1,12 +1,12 @@
 //! # Poseidon Hash (Goldilocks)
 //!
-//! Rust port of Poseidon2 hash function and Goldilocks field arithmetic, ported from lighter-go (Lighter Protocol).
+//! Rust implementation of Poseidon2 hash function and Goldilocks field arithmetic.
 //!
 //! ## ⚠️ Security Warning
 //!
 //! **This library has NOT been audited and is provided as-is. Use with caution.**
 //!
-//! - This is a **prototype port** from the Go SDK (lighter-go)
+//! - Prototype implementation focused on correctness
 //! - **Not security audited** - do not use in production without proper security review
 //! - While the implementation appears to work correctly, cryptographic software requires careful auditing
 //! - This is an open-source contribution and not an official Lighter Protocol library

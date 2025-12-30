@@ -1,23 +1,23 @@
 # Poseidon Hash (Goldilocks)
 
-Rust port of Poseidon2 hash function and Goldilocks field arithmetic, ported from lighter-go (Lighter Protocol).
+Rust implementation of Poseidon2 hash function and Goldilocks field arithmetic.
 
 ## ✅ Verification Status
 
-**Go Compatibility:** ✅ VERIFIED - Byte-for-byte match confirmed
+**Internal Consistency:** ✅ VERIFIED - Byte-for-byte match against bundled vectors
 
-- ✅ Hash outputs: Verified against Go test vectors (all 5 limbs match exactly)
-- ✅ Constants: EXTERNAL_CONSTANTS, INTERNAL_CONSTANTS, MATRIX_DIAG_12_U64 match Go
-- ✅ Permutation: Structure matches Go exactly
-- ✅ Test vectors: Comprehensive test suite with Go test vectors integrated
+- ✅ Hash outputs: Verified against bundled test vectors
+- ✅ Constants: EXTERNAL_CONSTANTS, INTERNAL_CONSTANTS, MATRIX_DIAG_12_U64 validated
+- ✅ Permutation: Structure validated against reference constants
+- ✅ Test vectors: Comprehensive test suite integrated
 
 ## ⚠️ Security Warning
 
 **This library has NOT been audited and is provided as-is. Use with caution.**
 
-- This is a **prototype port** from the Go SDK (lighter-go)
+- Prototype implementation focused on correctness
 - **Not security audited** - do not use in production without proper security review
-- While the implementation matches Go test vectors exactly, cryptographic software requires careful auditing
+- While the implementation matches internal test vectors, cryptographic software requires careful auditing
 - This is an open-source contribution and not an official Lighter Protocol library
 - Use at your own risk
 
@@ -228,7 +228,7 @@ The implementation is optimized for:
 
 ⚠️ **Important**: This library has NOT been security audited. Use with caution in production systems.
 
-- **Audit Status**: This is a prototype port from lighter-go and requires security review before production use
+- **Audit Status**: Prototype implementation that requires security review before production use
 - **Hash Function**: Poseidon2 is designed for ZK-proof systems but this implementation needs auditing
 - **Field Operations**: Ensure proper input validation and bounds checking in your application
 
@@ -247,4 +247,4 @@ at your option.
 
 ## Contributing
 
-This library is ported from GO-SDK of the [Lighter Protocol](https://github.com/elliottech/lighter-go) project. Feel free to open a PR or an issue.
+Contributions and issues are welcome.

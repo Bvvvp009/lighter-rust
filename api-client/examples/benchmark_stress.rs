@@ -81,16 +81,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                stats.total_time += elapsed;
-                if elapsed > stats.max_latency {
-                    stats.max_latency = elapsed;
-                }
-                if elapsed < stats.min_latency {
-                    stats.min_latency = elapsed;
-                }
+                stats.record_latency(elapsed);
             }
             Err(e) => {
                 stats.transport_fail += 1;
+                stats.record_latency(elapsed);
                 if stats.transport_fail <= 3 {
                     stats.sample_transport_errors.push((i, format!("{}", e)));
                 }
@@ -130,6 +125,7 @@ struct BenchmarkStats {
     total_time: Duration,
     min_latency: Duration,
     max_latency: Duration,
+    latencies: Vec<Duration>,
     sample_sig_errors: Vec<(usize, i64, String)>,
     sample_nonce_errors: Vec<(usize, i64, String)>,
     sample_other_errors: Vec<(usize, i64, String)>,
@@ -145,12 +141,24 @@ impl BenchmarkStats {
             other_fail: 0,
             transport_fail: 0,
             total_time: Duration::ZERO,
-            min_latency: Duration::from_secs(60),
+            min_latency: Duration::MAX,
             max_latency: Duration::ZERO,
+            latencies: Vec::new(),
             sample_sig_errors: Vec::new(),
             sample_nonce_errors: Vec::new(),
             sample_other_errors: Vec::new(),
             sample_transport_errors: Vec::new(),
+        }
+    }
+
+    fn record_latency(&mut self, d: Duration) {
+        self.total_time += d;
+        self.latencies.push(d);
+        if d < self.min_latency {
+            self.min_latency = d;
+        }
+        if d > self.max_latency {
+            self.max_latency = d;
         }
     }
 
@@ -167,11 +175,17 @@ impl BenchmarkStats {
             0.0
         };
 
-        let avg_latency = if self.success > 0 {
-            self.total_time.as_millis() as f64 / self.success as f64
+        let avg_latency = if !self.latencies.is_empty() {
+            self.total_time.as_millis() as f64 / self.latencies.len() as f64
         } else {
             0.0
         };
+
+        let mut sorted = self.latencies.clone();
+        sorted.sort_by(|a, b| a.cmp(b));
+        let p95 = percentile(&sorted, 0.95);
+        let p99 = percentile(&sorted, 0.99);
+        let p100 = sorted.last().cloned().unwrap_or(Duration::ZERO);
 
         println!("\n╔════════════════════════════════════════════════════════════╗");
         println!("║                      Benchmark Results                      ║");
@@ -202,7 +216,10 @@ impl BenchmarkStats {
         );
 
         println!("Latency Metrics:");
-        println!("  ├─ Min:               {:.0}ms", self.min_latency.as_millis());
+        println!("  ├─ Min:               {:.0}ms", if self.min_latency == Duration::MAX { 0 } else { self.min_latency.as_millis() });
+        println!("  ├─ p95:               {:.0}ms", p95.as_millis());
+        println!("  ├─ p99:               {:.0}ms", p99.as_millis());
+        println!("  ├─ p100:              {:.0}ms", p100.as_millis());
         println!("  ├─ Max:               {:.0}ms", self.max_latency.as_millis());
         println!("  ├─ Avg:               {:.1}ms", avg_latency);
         println!("  └─ Throughput:        {:.2} ord/s\n", 
@@ -256,4 +273,14 @@ impl BenchmarkStats {
         }
         println!("╚════════════════════════════════════════════════════════════╝");
     }
+}
+
+fn percentile(sorted: &[Duration], pct: f64) -> Duration {
+    if sorted.is_empty() {
+        return Duration::ZERO;
+    }
+    let n = sorted.len() as f64;
+    let rank = (pct * (n - 1.0)).round() as usize;
+    let idx = rank.min(sorted.len() - 1);
+    sorted[idx]
 }

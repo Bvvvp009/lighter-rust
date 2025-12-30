@@ -36,6 +36,189 @@ pub struct CreateOrderRequest {
     pub trigger_price: i64,
 }
 
+// Type-safe transaction info for CancelOrder (PascalCase to match API)
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CancelOrderTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    market_index: u8,
+    index: i64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for Transfer (PascalCase to match API)
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct TransferTxInfo {
+    from_account_index: i64,
+    api_key_index: u8,
+    to_account_index: i64,
+    usdc_amount: i64,
+    fee: i64,
+    memo: String, // hex-encoded memo
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for Withdraw (PascalCase to match API)
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct WithdrawTxInfo {
+    from_account_index: i64,
+    api_key_index: u8,
+    usdc_amount: u64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for ModifyOrder
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct ModifyOrderTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    market_index: u8,
+    index: i64,
+    base_amount: i64,
+    price: u32,
+    trigger_price: u32,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for CreateSubAccount
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreateSubAccountTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for Public Pool operations
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreatePublicPoolTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    operator_fee: i64,
+    initial_total_shares: i64,
+    min_operator_share_rate: i64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct UpdatePublicPoolTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    public_pool_index: i64,
+    status: u8,
+    operator_fee: i64,
+    min_operator_share_rate: i64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct MintSharesTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    public_pool_index: i64,
+    share_amount: i64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct BurnSharesTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    public_pool_index: i64,
+    share_amount: i64,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct UpdateMarginTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    market_index: u8,
+    usdc_amount: i64,
+    direction: u8,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe grouped order entry and tx
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct GroupedOrderInfo {
+    market_index: u8,
+    client_order_index: u64,
+    base_amount: i64,
+    price: i64,
+    is_ask: u8,
+    r#type: u8,
+    time_in_force: u8,
+    reduce_only: u8,
+    trigger_price: i64,
+    order_expiry: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreateGroupedOrdersTxInfo {
+    account_index: i64,
+    api_key_index: u8,
+    grouping_type: u8,
+    orders: Vec<GroupedOrderInfo>,
+    expired_at: i64,
+    nonce: i64,
+    sig: String,
+}
+
+// Type-safe transaction info for CreateOrder (PascalCase to match API)
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct CreateOrderTxInfo {
+    // CRITICAL: Fields MUST be in alphabetical order (by PascalCase key name)
+    // to match json!() macro output and produce correct signatures
+    account_index: i64,      // AccountIndex
+    api_key_index: u8,       // ApiKeyIndex
+    base_amount: i64,        // BaseAmount (alphabetically before ClientOrderIndex)
+    client_order_index: u64, // ClientOrderIndex
+    expired_at: i64,         // ExpiredAt
+    is_ask: u8,              // IsAsk (0 or 1)
+    market_index: u8,        // MarketIndex
+    nonce: i64,              // Nonce
+    order_expiry: i64,       // OrderExpiry
+    price: i64,              // Price
+    reduce_only: u8,         // ReduceOnly (0 or 1)
+    sig: String,             // Sig
+    time_in_force: u8,       // TimeInForce
+    trigger_price: i64,      // TriggerPrice
+    r#type: u8,              // Type (reserved keyword, use raw identifier)
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct TransferRequest {
     pub to_account_index: i64,
@@ -98,9 +281,8 @@ pub struct UpdateMarginRequest {
     pub direction: u8, // 0 = RemoveFromIsolatedMargin, 1 = AddToIsolatedMargin
 }
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicI64, Ordering}};
 use rand::RngCore;
-use tokio::sync::Mutex as AsyncMutex;
 
 pub struct LighterClient {
     client: Client,
@@ -110,52 +292,66 @@ pub struct LighterClient {
     api_key_index: u8,
     // Nonce cache for optimistic nonce management (like Python SDK)
     // Fetches once from API, then increments locally
-    nonce_cache: Arc<AsyncMutex<NonceCache>>,
+    nonce_cache: Arc<NonceCache>,
 }
 
 struct NonceCache {
-    // Simple optimistic nonce management: fetch once, then increment locally
-    last_fetched_nonce: i64,  // Last nonce fetched from API (stored as nonce - 1, like Python)
-    nonce_offset: i64,        // How many nonces we've used since last fetch
+    // Optimistic nonce management: store last used nonce (nonce-1 when initialized)
+    last_used_nonce: AtomicI64,
 }
 
 impl NonceCache {
     fn new() -> Self {
         Self {
-            last_fetched_nonce: -1,  // -1 means not initialized
-            nonce_offset: 0,
+            last_used_nonce: AtomicI64::new(-1), // -1 means not initialized
         }
     }
     
-    fn get_next_nonce(&mut self) -> Option<i64> {
-        if self.last_fetched_nonce == -1 {
-            None  // Not initialized, need to fetch from API
+    fn get_next_nonce(&self) -> Option<i64> {
+        let current = self.last_used_nonce.load(Ordering::SeqCst);
+        if current == -1 {
+            None // Not initialized, need to fetch from API
         } else {
-            // Increment offset and return next nonce
-            // Formula: (last_fetched_nonce - 1) + offset + 1 = last_fetched_nonce + offset
-            self.nonce_offset += 1;
-            Some(self.last_fetched_nonce + self.nonce_offset)
+            // Increment and return next nonce
+            Some(self.last_used_nonce.fetch_add(1, Ordering::SeqCst) + 1)
         }
     }
     
-    fn set_fetched_nonce(&mut self, nonce: i64) {
+    fn set_fetched_nonce(&self, nonce: i64) {
         // Store as nonce - 1, so first increment gives us the correct nonce
         // This matches Python's OptimisticNonceManager behavior
-        self.last_fetched_nonce = nonce - 1;
-        self.nonce_offset = 0;
+        self.last_used_nonce.store(nonce - 1, Ordering::SeqCst);
     }
     
-    fn acknowledge_failure(&mut self) {
+    fn acknowledge_failure(&self) {
         // Decrement offset on failure to allow retry with same nonce
         // This matches Python's OptimisticNonceManager behavior
-        if self.nonce_offset > 0 {
-            self.nonce_offset -= 1;
+        loop {
+            let current = self.last_used_nonce.load(Ordering::SeqCst);
+            if current <= -1 {
+                break;
+            }
+            if self
+                .last_used_nonce
+                .compare_exchange(current, current.saturating_sub(1), Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
         }
     }
     
 }
 
 impl LighterClient {
+    #[inline]
+    fn sig_debug_enabled() -> bool {
+        std::env::var("SIG_DEBUG_DUMP")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    }
+
     pub fn new(
         base_url: String,
         private_key_hex: &str,
@@ -163,7 +359,15 @@ impl LighterClient {
         api_key_index: u8,
     ) -> Result<Self> {
         let key_manager = KeyManager::from_hex(private_key_hex)?;
-        let client = Client::new();
+        // Configure client with tuned timeouts and connection pooling (aligned with Go SDK)
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))  // 30s total timeout
+            .connect_timeout(std::time::Duration::from_secs(10))  // 10s connect timeout
+            .pool_idle_timeout(std::time::Duration::from_secs(10))  // Idle connections cleaned up quickly
+            .pool_max_idle_per_host(100)  // Maintain a healthy idle pool per host
+            .tcp_keepalive(std::time::Duration::from_secs(60))  // Keep connections reusable
+            .http1_only()  // HTTP/1.1 for predictable latency on single requests
+            .build()?;
         
         Ok(Self {
             client,
@@ -171,9 +375,10 @@ impl LighterClient {
             key_manager,
             account_index,
             api_key_index,
-            nonce_cache: Arc::new(AsyncMutex::new(NonceCache::new())),
+            nonce_cache: Arc::new(NonceCache::new()),
         })
     }
+
     
     pub async fn create_order(&self, order: CreateOrderRequest) -> Result<Value> {
         self.create_order_with_nonce(order, None).await
@@ -185,34 +390,48 @@ impl LighterClient {
     /// Creates an order with automatic retries for transient errors.
     /// On transient errors (nonce/signature), fetches fresh nonce from API and retries.
     /// This ensures server and client nonce state stay synchronized.
+    /// 
+    /// IMPORTANT: When using external nonces (nonce is Some(specific_value)), retries are DISABLED
+    /// to prevent nonce conflicts. External nonces are expected to be managed externally.
     pub async fn create_order_with_nonce(&self, order: CreateOrderRequest, nonce: Option<i64>) -> Result<Value> {
-        const MAX_RETRIES: u32 = 2; // Retries for transient failures (nonce/sig)
-        // Delay between retries: 500-1000ms for server to process previous attempt
-        let retry_delay_ms: u64 = std::env::var("RETRY_DELAY_MS")
+        const MAX_RETRIES: u32 = 2; // Reduced retries (0, 1, 2 = 3 attempts total)
+        // Delay between retries with backoff for server to process previous attempt
+        let base_retry_delay_ms: u64 = std::env::var("RETRY_DELAY_MS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(500);
+            .unwrap_or(100);  // Reduced from 500ms to 100ms
+        
+        // Detect if external nonce is being used (not None, not -1 fetch signal)
+        let is_external_nonce = nonce.is_some() && nonce != Some(-1);
         
         // Fetch nonce once before retry loop
         let mut current_nonce = self.get_nonce_or_use(nonce).await?;
         let mut last_error: Option<ApiError> = None;
         
+        // Telemetry: Track retry attempts
+        let mut sig_retry_count = 0;
+        let mut nonce_retry_count = 0;
+        let start_time = std::time::Instant::now();
+        
         for attempt in 0..=MAX_RETRIES {
             if attempt > 0 {
-                // Backoff before retry
-                tokio::time::sleep(tokio::time::Duration::from_millis(retry_delay_ms)).await;
-                // On retry: fetch fresh nonce from API to sync with server state
-                // This is critical for nonce/signature errors
-                match self.fetch_nonce_from_api().await {
-                    Ok(fresh_nonce) => {
-                        current_nonce = fresh_nonce;
-                        // Reset cache with fetched nonce
-                        let mut cache = self.nonce_cache.lock().await;
-                        cache.set_fetched_nonce(fresh_nonce);
-                    }
-                    Err(_) => {
-                        // If fetch fails, proceed with current nonce
-                        // (better than failing completely)
+                // Backoff before retry (exponential backoff for faster failures)
+                // attempt 1: 100ms, attempt 2: 200ms
+                let delay = base_retry_delay_ms.saturating_mul(attempt as u64);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                // Only fetch fresh nonce on retry if we had a nonce/sig error
+                // This avoids unnecessary API calls
+                if last_error.as_ref().map(|e| e.to_string().contains("nonce") || e.to_string().contains("sig")).unwrap_or(false) {
+                    match self.fetch_nonce_from_api().await {
+                        Ok(fresh_nonce) => {
+                            current_nonce = fresh_nonce;
+                            // Reset cache with fetched nonce
+                            self.nonce_cache.set_fetched_nonce(fresh_nonce);
+                        }
+                        Err(_) => {
+                            // If fetch fails, increment current nonce and try
+                            current_nonce += 1;
+                        }
                     }
                 }
             }
@@ -222,13 +441,52 @@ impl LighterClient {
                     let code = response["code"].as_i64().unwrap_or_default();
                     if code == 200 {
                         // Success
+                        let elapsed = start_time.elapsed();
+                        if sig_retry_count > 0 || nonce_retry_count > 0 {
+                            log::info!(
+                                "[RETRY TELEMETRY] Order successful after retries | Sig retries: {} | Nonce retries: {} | Total time: {:?} | Final nonce: {}",
+                                sig_retry_count, nonce_retry_count, elapsed, current_nonce
+                            );
+                        }
                         return Ok(response);
                     } else if attempt < MAX_RETRIES {
                         // Check for known transient errors
                         let msg = response["message"].as_str().unwrap_or("").to_lowercase();
                         let is_sig_err = code == 21120 || msg.contains("invalid signature");
                         let is_nonce_err = code == 21104 || msg.contains("nonce");
-                        if is_sig_err || is_nonce_err {
+                        // Don't retry permanent errors (rate limiting, quota, validation errors)
+                        let is_rate_limit = code == 23000 || msg.contains("rate limit") || msg.contains("quota");
+                        let is_validation = code >= 21000 && code < 22000 && !is_sig_err && !is_nonce_err;
+                        
+                        if is_rate_limit || is_validation {
+                            // Permanent error - fail fast without retry
+                            {
+                                self.nonce_cache.acknowledge_failure();
+                            }
+                            return Ok(response);
+                        } else if is_sig_err || is_nonce_err {
+                            // CRITICAL: If using external nonce, do NOT retry signature/nonce errors
+                            // Retrying with a different nonce would create conflicts
+                            if is_external_nonce {
+                                self.nonce_cache.acknowledge_failure();
+                                return Ok(response);
+                            }
+                            
+                            // Telemetry: Track retry type
+                            if is_sig_err {
+                                sig_retry_count += 1;
+                                log::warn!(
+                                    "[RETRY TELEMETRY] Signature validation failed - Attempt {}/{} | Nonce: {} | Code: {} | Msg: {}",
+                                    attempt + 1, MAX_RETRIES + 1, current_nonce, code, msg
+                                );
+                            } else {
+                                nonce_retry_count += 1;
+                                log::warn!(
+                                    "[RETRY TELEMETRY] Nonce mismatch - Attempt {}/{} | Used: {} | Code: {} | Msg: {}",
+                                    attempt + 1, MAX_RETRIES + 1, current_nonce, code, msg
+                                );
+                            }
+                            
                             // Retry with fresh nonce (fetched at top of next iteration)
                             last_error = Some(ApiError::Api(format!(
                                 "Transient error (code {}){} - will retry",
@@ -237,18 +495,14 @@ impl LighterClient {
                             )));
                             continue;
                         } else {
-                            // Permanent error - don't retry
-                            {
-                                let mut cache = self.nonce_cache.lock().await;
-                                cache.acknowledge_failure();
-                            }
+                            // Other error - don't retry
+                            self.nonce_cache.acknowledge_failure();
                             return Ok(response);
                         }
                     } else {
                         // Max retries exhausted - return final response
                         {
-                            let mut cache = self.nonce_cache.lock().await;
-                            cache.acknowledge_failure();
+                            self.nonce_cache.acknowledge_failure();
                         }
                         return Ok(response);
                     }
@@ -259,10 +513,7 @@ impl LighterClient {
                         last_error = Some(e);
                         continue;
                     } else {
-                        {
-                            let mut cache = self.nonce_cache.lock().await;
-                            cache.acknowledge_failure();
-                        }
+                        self.nonce_cache.acknowledge_failure();
                         return Err(e);
                     }
                 }
@@ -270,16 +521,22 @@ impl LighterClient {
         }
         
         // All retries exhausted
-        {
-            let mut cache = self.nonce_cache.lock().await;
-            cache.acknowledge_failure();
-        }
+        let elapsed = start_time.elapsed();
+        log::error!(
+            "[RETRY TELEMETRY] All retries exhausted | Sig retries: {} | Nonce retries: {} | Total time: {:?} | Last nonce: {}",
+            sig_retry_count, nonce_retry_count, elapsed, current_nonce
+        );
+        self.nonce_cache.acknowledge_failure();
         Err(last_error.unwrap_or_else(|| ApiError::Api("Failed after all retries".to_string())))
     }
     
     /// Internal method to create order (without retry logic)
     /// This is called by create_order_with_nonce for each retry attempt
     /// Uses the provided nonce directly (no fetching)
+    /// 
+    /// ✅ SIGNATURE FIX: Using json!() macro ensures correct field ordering
+    /// and byte-exact JSON serialization for cryptographic signature generation.
+    /// This matches the Go SDK implementation which uses single serialization.
     async fn create_order_internal(&self, order: &CreateOrderRequest, nonce: Option<i64>) -> Result<Value> {
         let nonce = nonce.expect("Nonce should be provided to create_order_internal");
         
@@ -288,8 +545,10 @@ impl LighterClient {
         // This gives a 1 second margin to eliminate millisecond differences
         // Calculate timestamp right before creating tx_info to minimize clock skew
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+        // Allow manual skew adjustment if server clock differs (positive or negative)
+        let expired_at_skew: i64 = std::env::var("EXPIRED_AT_SKEW_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
         // Use 10 minutes - 1 second (599,000 ms) to match Go SDK exactly
-        let expired_at = now + 599_000; // 10 minutes - 1 second (matches Go SDK)
+        let expired_at = now + 599_000 + expired_at_skew; // 10 minutes - 1 second (matches Go SDK)
         
         // OrderExpiry: For limit orders with GoodTillTime, set to 28 days
         // For other orders, use 0 (nil)
@@ -300,6 +559,7 @@ impl LighterClient {
             0 // NilOrderExpiry
         };
         
+        // Build tx info using json!() macro (reverting to original approach to debug signature issue)
         let tx_info = json!({
             "AccountIndex": self.account_index,
             "ApiKeyIndex": self.api_key_index,
@@ -317,25 +577,35 @@ impl LighterClient {
             "Nonce": nonce,
             "Sig": ""
         });
-        
+
         let tx_json = serde_json::to_string(&tx_info)?;
+        
+        // Debug logging for signature validation
+        if std::env::var("DEBUG_TX_JSON").is_ok() {
+            eprintln!("CreateOrder TX_JSON (before sig): {}", tx_json);
+            eprintln!("Nonce: {}, ExpiredAt: {}", nonce, expired_at);
+        }
+        
         let signature = self.sign_transaction(&tx_json)?;
-        
+
+        // Attach signature and serialize once more for send
         let mut final_tx_info = tx_info;
-        let sig_base64 = base64::engine::general_purpose::STANDARD.encode(&signature);
-        final_tx_info["Sig"] = json!(sig_base64);
-        
+        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
         let final_tx_json = serde_json::to_string(&final_tx_info)?;
-        
-        let form_data = [
-            ("tx_type", "14"), // CREATE_ORDER
-            ("tx_info", &final_tx_json),
-        ];
+
+        if std::env::var("DEBUG_TX_JSON").is_ok() {
+            eprintln!("CreateOrder TX_JSON (after sig): {}", final_tx_json);
+        }
+
+        if Self::sig_debug_enabled() {
+            eprintln!("[SIG_DEBUG] tx_type=14 nonce={} expired_at={} order_expiry={}", nonce, expired_at, order_expiry);
+            eprintln!("[SIG_DEBUG] final_tx_json={}", final_tx_json);
+        }
         
         let response = self
             .client
             .post(&format!("{}/api/v1/sendTx", self.base_url))
-            .form(&form_data)
+            .form(&[("tx_type", "14"), ("tx_info", &final_tx_json)])
             .send()
             .await?;
         
@@ -393,32 +663,25 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "MarketIndex": order_book_index,
-            "Index": order_index,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = CancelOrderTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            market_index: order_book_index,
+            index: order_index,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 15)?; // TX_TYPE_CANCEL_ORDER
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
-
-        let form_data = [
-            ("tx_type", "15"), // CANCEL_ORDER
-            ("tx_info", &serde_json::to_string(&final_tx_info)?),
-            ("price_protection", "true"),
-        ];
+        let final_tx_info = CancelOrderTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let response = self
             .client
             .post(&format!("{}/api/v1/sendTx", self.base_url))
-            .form(&form_data)
+            .form(&[("tx_type", "15"), ("tx_info", &serde_json::to_string(&final_tx_info)?), ("price_protection", "true")])
             .send()
             .await?;
 
@@ -449,16 +712,10 @@ impl LighterClient {
         let mut final_tx_info = tx_info;
         final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
 
-        let form_data = [
-            ("tx_type", "16"), // CANCEL_ALL_ORDERS
-            ("tx_info", &serde_json::to_string(&final_tx_info)?),
-            ("price_protection", "true"),
-        ];
-
         let response = self
             .client
             .post(&format!("{}/api/v1/sendTx", self.base_url))
-            .form(&form_data)
+            .form(&[("tx_type", "16"), ("tx_info", &serde_json::to_string(&final_tx_info)?), ("price_protection", "true")])
             .send()
             .await?;
 
@@ -547,8 +804,7 @@ impl LighterClient {
                 match self.fetch_nonce_from_api().await {
                     Ok(fresh_nonce) => {
                         current_nonce = fresh_nonce;
-                        let mut cache = self.nonce_cache.lock().await;
-                        cache.set_fetched_nonce(fresh_nonce);
+                        self.nonce_cache.set_fetched_nonce(fresh_nonce);
                     }
                     Err(_) => {
                         // If fetch fails, continue with current nonce
@@ -606,19 +862,13 @@ impl LighterClient {
                 continue;
             } else {
                 // Other error or max retries reached
-                {
-                    let mut cache = self.nonce_cache.lock().await;
-                    cache.acknowledge_failure();
-                }
+                self.nonce_cache.acknowledge_failure();
                 return Ok(response_json);
             }
         }
         
         // If we get here, all retries failed
-        {
-            let mut cache = self.nonce_cache.lock().await;
-            cache.acknowledge_failure();
-        }
+        self.nonce_cache.acknowledge_failure();
         Err(last_error.unwrap_or_else(|| ApiError::Api("Failed after all retries".to_string())))
     }
 
@@ -628,23 +878,22 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "FromAccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "ToAccountIndex": request.to_account_index,
-            "USDCAmount": request.usdc_amount,
-            "Fee": request.fee,
-            "Memo": hex::encode(request.memo),
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = TransferTxInfo {
+            from_account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            to_account_index: request.to_account_index,
+            usdc_amount: request.usdc_amount,
+            fee: request.fee,
+            memo: hex::encode(request.memo),
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 12)?; // TX_TYPE_TRANSFER
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = TransferTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "12"), // TRANSFER
@@ -671,20 +920,19 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "FromAccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "USDCAmount": request.usdc_amount,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = WithdrawTxInfo {
+            from_account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            usdc_amount: request.usdc_amount,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 13)?; // TX_TYPE_WITHDRAW
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = WithdrawTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "13"), // WITHDRAW
@@ -711,24 +959,23 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "MarketIndex": request.market_index,
-            "Index": request.order_index,
-            "BaseAmount": request.base_amount,
-            "Price": request.price,
-            "TriggerPrice": request.trigger_price,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = ModifyOrderTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            market_index: request.market_index,
+            index: request.order_index,
+            base_amount: request.base_amount,
+            price: request.price,
+            trigger_price: request.trigger_price,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 17)?; // TX_TYPE_MODIFY_ORDER
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = ModifyOrderTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "17"), // MODIFY_ORDER
@@ -755,19 +1002,18 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = CreateSubAccountTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 9)?; // TX_TYPE_CREATE_SUB_ACCOUNT
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = CreateSubAccountTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "9"), // CREATE_SUB_ACCOUNT
@@ -794,22 +1040,21 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "OperatorFee": request.operator_fee,
-            "InitialTotalShares": request.initial_total_shares,
-            "MinOperatorShareRate": request.min_operator_share_rate,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = CreatePublicPoolTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            operator_fee: request.operator_fee,
+            initial_total_shares: request.initial_total_shares,
+            min_operator_share_rate: request.min_operator_share_rate,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 10)?; // TX_TYPE_CREATE_PUBLIC_POOL
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = CreatePublicPoolTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "10"), // CREATE_PUBLIC_POOL
@@ -836,23 +1081,22 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "PublicPoolIndex": request.public_pool_index,
-            "Status": request.status,
-            "OperatorFee": request.operator_fee,
-            "MinOperatorShareRate": request.min_operator_share_rate,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = UpdatePublicPoolTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            public_pool_index: request.public_pool_index,
+            status: request.status,
+            operator_fee: request.operator_fee,
+            min_operator_share_rate: request.min_operator_share_rate,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 11)?; // TX_TYPE_UPDATE_PUBLIC_POOL
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = UpdatePublicPoolTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "11"), // UPDATE_PUBLIC_POOL
@@ -879,21 +1123,20 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "PublicPoolIndex": request.public_pool_index,
-            "ShareAmount": request.share_amount,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = MintSharesTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            public_pool_index: request.public_pool_index,
+            share_amount: request.share_amount,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 18)?; // TX_TYPE_MINT_SHARES
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = MintSharesTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "18"), // MINT_SHARES
@@ -920,21 +1163,20 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "PublicPoolIndex": request.public_pool_index,
-            "ShareAmount": request.share_amount,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = BurnSharesTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            public_pool_index: request.public_pool_index,
+            share_amount: request.share_amount,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 19)?; // TX_TYPE_BURN_SHARES
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = BurnSharesTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "19"), // BURN_SHARES
@@ -961,22 +1203,21 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "MarketIndex": request.market_index,
-            "USDCAmount": request.usdc_amount,
-            "Direction": request.direction,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = UpdateMarginTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            market_index: request.market_index,
+            usdc_amount: request.usdc_amount,
+            direction: request.direction,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 29)?; // TX_TYPE_UPDATE_MARGIN
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = UpdateMarginTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "29"), // UPDATE_MARGIN
@@ -1003,36 +1244,33 @@ impl LighterClient {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
         let expired_at = now + 599_000;
 
-        let orders_json: Vec<serde_json::Value> = request.orders.iter().map(|order| {
-            json!({
-                "MarketIndex": order.order_book_index,
-                "ClientOrderIndex": order.client_order_index,
-                "BaseAmount": order.base_amount,
-                "Price": order.price,
-                "IsAsk": if order.is_ask { 1 } else { 0 },
-                "Type": order.order_type,
-                "TimeInForce": order.time_in_force,
-                "ReduceOnly": if order.reduce_only { 1 } else { 0 },
-                "TriggerPrice": order.trigger_price,
-                "OrderExpiry": 0,
-            })
+        let orders: Vec<GroupedOrderInfo> = request.orders.iter().map(|order| GroupedOrderInfo {
+            market_index: order.order_book_index,
+            client_order_index: order.client_order_index,
+            base_amount: order.base_amount,
+            price: order.price,
+            is_ask: if order.is_ask { 1 } else { 0 },
+            r#type: order.order_type,
+            time_in_force: order.time_in_force,
+            reduce_only: if order.reduce_only { 1 } else { 0 },
+            trigger_price: order.trigger_price,
+            order_expiry: 0,
         }).collect();
 
-        let tx_info = json!({
-            "AccountIndex": self.account_index,
-            "ApiKeyIndex": self.api_key_index,
-            "GroupingType": request.grouping_type,
-            "Orders": orders_json,
-            "ExpiredAt": expired_at,
-            "Nonce": nonce,
-            "Sig": ""
-        });
+        let tx_info = CreateGroupedOrdersTxInfo {
+            account_index: self.account_index,
+            api_key_index: self.api_key_index,
+            grouping_type: request.grouping_type,
+            orders,
+            expired_at,
+            nonce,
+            sig: String::new(),
+        };
 
         let tx_json = serde_json::to_string(&tx_info)?;
         let signature = self.sign_transaction_with_type(&tx_json, 28)?; // TX_TYPE_CREATE_GROUPED_ORDERS
 
-        let mut final_tx_info = tx_info;
-        final_tx_info["Sig"] = json!(base64::engine::general_purpose::STANDARD.encode(&signature));
+        let final_tx_info = CreateGroupedOrdersTxInfo { sig: base64::engine::general_purpose::STANDARD.encode(&signature), ..tx_info };
 
         let form_data = [
             ("tx_type", "28"), // CREATE_GROUPED_ORDERS
@@ -1089,25 +1327,24 @@ impl LighterClient {
     /// Fetches from API once, then increments locally
     /// Only fetches again if cache is not initialized
     async fn get_next_nonce_from_cache(&self) -> Result<i64> {
-        let mut cache = self.nonce_cache.lock().await;
-        
         // If cache is initialized, use optimistic nonce management
-        if let Some(nonce) = cache.get_next_nonce() {
+        if let Some(nonce) = self.nonce_cache.clone().get_next_nonce() {
             return Ok(nonce);
         }
-        
+
         // Cache not initialized, fetch from API
-        drop(cache); // Release lock before async call
         let nonce = self.fetch_nonce_from_api().await?;
-        
+
         // Update cache with fetched nonce and immediately use it
-        let mut cache = self.nonce_cache.lock().await;
-        cache.set_fetched_nonce(nonce);
-        
-        // Get the first nonce from cache (this increments offset)
-        // This ensures the next call will return the next sequential nonce
-        let first_nonce = cache.get_next_nonce().expect("Cache just initialized, should have nonce");
-        
+        self.nonce_cache.clone().set_fetched_nonce(nonce);
+
+        // Get the first nonce from cache (this increments)
+        let first_nonce = self
+            .nonce_cache
+            .clone()
+            .get_next_nonce()
+            .expect("Cache just initialized, should have nonce");
+
         Ok(first_nonce)
     }
     
@@ -1129,8 +1366,7 @@ impl LighterClient {
     /// Refresh nonce from API (useful for manual refresh)
     pub async fn refresh_nonce(&self) -> Result<i64> {
         let nonce = self.fetch_nonce_from_api().await?;
-        let mut cache = self.nonce_cache.lock().await;
-        cache.set_fetched_nonce(nonce);
+        self.nonce_cache.set_fetched_nonce(nonce);
         Ok(nonce)
     }
     
@@ -1187,13 +1423,12 @@ impl LighterClient {
     fn sign_transaction_internal(&self, tx_json: &str, tx_type: u32) -> Result<[u8; 80]> {
         let tx_value: Value = serde_json::from_str(tx_json)?;
 
-        // Determine chain ID based on base URL
-        // Mainnet: 304, Testnet: 300
-        let lighter_chain_id = if self.base_url.contains("mainnet") {
-            304u32
-        } else {
-            300u32
-        };
+        // Determine chain ID; allow explicit override to avoid mis-detection on custom hosts
+        // Mainnet: 304, Testnet: 300 (default)
+        let lighter_chain_id = std::env::var("LIGHTER_CHAIN_ID")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or_else(|| if self.base_url.contains("mainnet") { 304u32 } else { 300u32 });
         let nonce = tx_value["Nonce"].as_i64().unwrap_or(0);
         let expired_at = tx_value["ExpiredAt"].as_i64().unwrap_or(0);
         let account_index = tx_value["AccountIndex"].as_i64().unwrap_or(0);
@@ -1248,10 +1483,10 @@ impl LighterClient {
                     to_goldi_i64(client_order_index),
                     to_goldi_i64(base_amount),
                     Goldilocks::from_canonical_u64(price as u64),
-                    Goldilocks::from_canonical_u64(is_ask as u64),
+                    Goldilocks::from_canonical_u64(is_ask as u64),         // Element 10: IsAsk (CORRECT)
                     Goldilocks::from_canonical_u64(order_type as u64),
                     Goldilocks::from_canonical_u64(time_in_force as u64),
-                    Goldilocks::from_canonical_u64(reduce_only as u64),
+                    Goldilocks::from_canonical_u64(reduce_only as u64),    // Element 13: ReduceOnly (CORRECT)
                     Goldilocks::from_canonical_u64(trigger_price as u64),
                     to_goldi_i64(order_expiry),
                 ]
@@ -1294,17 +1529,18 @@ impl LighterClient {
             8 => {
                 // CHANGE_PUB_KEY: needs pubkey parsing (ArrayFromCanonicalLittleEndianBytes)
                 let pubkey_hex = tx_value["PubKey"].as_str().unwrap_or("");
-                let pubkey_bytes = hex::decode(pubkey_hex)
-                    .map_err(|e| ApiError::Api(format!("Invalid PubKey hex: {}", e)))?;
+                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|_| ApiError::Api("PubKey must be hex".to_string()))?;
                 if pubkey_bytes.len() != 40 {
+                    self.nonce_cache.acknowledge_failure();
                     return Err(ApiError::Api("PubKey must be 40 bytes".to_string()));
                 }
+
                 // Convert 40-byte public key to 5 Goldilocks elements (8 bytes per element)
-                let mut pubkey_elems = Vec::new();
+                let mut pubkey_elems = Vec::with_capacity(5);
                 for i in 0..5 {
-                    let chunk = &pubkey_bytes[i*8..(i+1)*8];
-                    let val = u64::from_le_bytes(chunk.try_into().unwrap());
-                    pubkey_elems.push(Goldilocks::from_canonical_u64(val));
+                    let mut chunk = [0u8; 8];
+                    chunk.copy_from_slice(&pubkey_bytes[i * 8..(i + 1) * 8]);
+                    pubkey_elems.push(Goldilocks::from_canonical_u64(u64::from_le_bytes(chunk)));
                 }
 
                 let mut elems = vec![
@@ -1642,6 +1878,17 @@ impl LighterClient {
         // Sign the transaction hash using Schnorr signature
         let signature = self.key_manager.sign(&hash_bytes)
             .map_err(|e| ApiError::Signer(e))?;
+
+        if Self::sig_debug_enabled() {
+            let pubkey = self.key_manager.public_key_bytes();
+            let sig_hex = hex::encode(&signature);
+            let sig_b64 = base64::engine::general_purpose::STANDARD.encode(&signature);
+            let hash_hex = hex::encode(&hash_bytes);
+            eprintln!("[SIG_DEBUG] tx_type={} nonce={} expired_at={} account_index={} api_key_index={}", tx_type, nonce, expired_at, account_index, api_key_index);
+            eprintln!("[SIG_DEBUG] elements={:?}", elements.iter().map(|e| e.0).collect::<Vec<_>>());
+            eprintln!("[SIG_DEBUG] hash_bytes={} pubkey={} sig_hex={} sig_b64={}", hash_hex, hex::encode(pubkey), sig_hex, sig_b64);
+            eprintln!("[SIG_DEBUG] tx_json={}", tx_json);
+        }
         
         Ok(signature)
     }
@@ -1659,7 +1906,8 @@ impl LighterClient {
     ) -> Result<Value> {
         let nonce = self.get_nonce_or_use(nonce).await?;
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
-        let expired_at = now + 599_000; // 10 minutes - 1 second (in milliseconds)
+        let expired_at_skew: i64 = std::env::var("EXPIRED_AT_SKEW_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let expired_at = now + 599_000 + expired_at_skew; // 10 minutes - 1 second (in milliseconds)
         
         let order_expiry = if order.trigger_price == 0 && order.order_type == 0 {
             // Default expiry for limit orders: 28 days

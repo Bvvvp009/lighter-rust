@@ -33,6 +33,10 @@ name = "scalar_field"
 harness = false
 
 [[bench]]
+name = "scalar_ops"
+harness = false
+
+[[bench]]
 name = "schnorr"
 harness = false
 

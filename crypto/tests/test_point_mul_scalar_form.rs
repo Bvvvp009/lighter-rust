@@ -98,3 +98,7 @@ fn test_point_mul_with_canonical_scalars() {
 
 
 
+
+
+
+

@@ -178,24 +178,26 @@ impl ScalarField {
     /// let sum = a.add(b);
     /// ```
     pub fn add(&self, rhs: ScalarField) -> ScalarField {
+        // Fast path: add limbs with carry
         let r0 = self.add_inner(rhs);
-        let (r1, c) = r0.sub_inner(&Self::N);
-        // Logic: r0 = self + rhs (unreduced)
-        //        r1 = r0 - N (subtract modulus)
-        //        c = borrow flag from r0 - N
-        // If c == 0: no borrow, meaning r0 >= N, so we should return r1 (r0 - N)
-        // If c != 0: borrow occurred, meaning r0 < N, so we should return r0
-        // So: select(c, &r1, &r0) - if c==0 return r1, if c!=0 return r0
-        // But our select returns a1 if c != 0, a0 if c == 0
-        // So we need: select(c, &r1, &r0) which gives: if c==0 return r1, if c!=0 return r0
-        Self::select(c, &r1, &r0)
+        // Try subtracting N to reduce
+        let (r1, borrow) = r0.sub_inner(&Self::N);
+        // If no borrow (borrow == 0), r0 >= N, so use r1 = r0 - N
+        // If borrow (borrow != 0), r0 < N, so use r0
+        Self::select(borrow, &r1, &r0)
     }
     
     /// Subtracts two scalars with modular reduction.
     pub fn sub(&self, rhs: ScalarField) -> ScalarField {
-        let (r0, c) = self.sub_inner(&rhs);
-        let r1 = r0.add_inner(Self::N);
-        Self::select(c, &r0, &r1)
+        // Try direct subtraction
+        let (r0, borrow) = self.sub_inner(&rhs);
+        // If borrow (borrow != 0), result is negative, so add N
+        // If no borrow (borrow == 0), result is already correct
+        if borrow != 0 {
+            r0.add_inner(Self::N)
+        } else {
+            r0
+        }
     }
     
     /// Computes the additive inverse (negation) of this scalar.
@@ -260,8 +262,13 @@ impl ScalarField {
     /// let product = a.mul(&b);
     /// ```
     pub fn mul(&self, rhs: &ScalarField) -> ScalarField {
-        let res = self.monty_mul(&Self::R2).monty_mul(rhs);
-        res
+        // Use Montgomery multiplication for performance
+        // Convert to Montgomery form, multiply, and convert back
+        let a_mont = self.monty_mul(&Self::R2);
+        let b_mont = rhs.monty_mul(&Self::R2);
+        let prod_mont = a_mont.monty_mul(&b_mont);
+        // Convert back from Montgomery form
+        prod_mont.monty_mul(&ScalarField::ONE)
     }
     
     /// Computes the square of this scalar.
@@ -502,8 +509,9 @@ impl ScalarField {
         use rand::Rng;
         
         // Generate random big int in range [0, ORDER)
-        // ORDER = 1067993516717146951041484916571792702745057740581727230159139685185762082554198619328292418486241
-        let order_bytes = hex::decode("e80fd996948bffe1e8885c39d724a09c7fffffe6cfb806397ffffff1000000167ffffffd80000007")
+        // ORDER = N = 1067993516717146951041484916571792702745057740581727230159139685185762082554198619328292418486241
+        // N in big-endian hex:
+        let order_bytes = hex::decode("7ffffffd800000077ffffff1000000167fffffe6cfb80639e8885c39d724a09ce80fd996948bffe1")
             .expect("invalid ORDER hex");
         
         let order_big = BigUint::from_bytes_be(&order_bytes);

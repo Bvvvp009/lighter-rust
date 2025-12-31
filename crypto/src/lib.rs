@@ -67,14 +67,6 @@ pub use batch_verify::batch_verify;
 // WeierstrassPoint will be added when needed - for now using Point::mul_add2 for verification
 pub type WeierstrassPoint = Point;
 
-// Expose sign_with_nonce for testing and benchmarking
-#[cfg(any(test, feature = "test-utils"))]
-pub use schnorr::sign_with_nonce;
-
-// Also expose for benchmarks (which are compiled in release mode)
-#[cfg(not(any(test, feature = "test-utils")))]
-pub(crate) use schnorr::sign_with_nonce as _sign_with_nonce_internal;
-
 use thiserror::Error;
 
 /// Errors that can occur during cryptographic operations.

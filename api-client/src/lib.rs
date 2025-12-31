@@ -202,6 +202,7 @@ struct CreateGroupedOrdersTxInfo {
 // Type-safe transaction info for CreateOrder (PascalCase to match API)
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)]
 struct CreateOrderTxInfo {
     // CRITICAL: Fields MUST be in alphabetical order (by PascalCase key name)
     // to match json!() macro output and produce correct signatures

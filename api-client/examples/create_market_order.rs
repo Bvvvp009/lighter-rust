@@ -1,4 +1,4 @@
-use api_client::{LighterClient, CreateOrderRequest};
+use api_client::LighterClient;
 use std::env;
 
 #[tokio::main]

@@ -92,12 +92,6 @@ benchmarks_report.md
 *.html
 tarpaulin-report.html
 
-# Scripts for testing (utility scripts)
-scripts/analyze_retry_telemetry.py
-scripts/monitor_retries.py
-scripts/generate_auth_token_vectors.ps1
-scripts/generate_auth_token_vectors.sh
-
 # Legacy and temporary
 legacy/
 legacy/*

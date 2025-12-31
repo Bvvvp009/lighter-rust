@@ -25,56 +25,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = LighterClient::new(base_url.clone(), &api_key, account_index, api_key_index)?;
 
-    println!("Validating API key...");
-    match client.check_api_key().await {
-        Ok(()) => {
-            println!("SUCCESS - API key is valid!");
-            println!("  Account Index: {}", client.account_index());
-            println!("  API Key Index: {}", client.api_key_index());
+    println!("Checking API key on server...");
+    println!("  Account: {}", account_index);
+    println!("  API Key Index: {}", api_key_index);
+    println!();
+
+    let url = format!(
+        "{}/api/v1/apiKey?account_index={}&api_key_index={}",
+        base_url, account_index, api_key_index
+    );
+
+    let response = reqwest::Client::new().get(&url).send().await?;
+    let status = response.status();
+    let body = response.text().await?;
+    let trimmed = body.trim();
+
+    println!("📡 Response Status: {}", status);
+    
+    if trimmed.is_empty() {
+        println!("⚠️  Empty response from server");
+        println!("Note: API key may not be registered or endpoint changed");
+        return Ok(());
+    }
+
+    if !status.is_success() {
+        println!("❌ HTTP error: {}", status);
+        println!("Response: {}", trimmed);
+        return Ok(());
+    }
+
+    match serde_json::from_str::<Value>(trimmed) {
+        Ok(json) => {
+            if let Some(server_pubkey) = json["public_key"].as_str() {
+                let local_pubkey = hex::encode(client.key_manager().public_key_bytes());
+                let server_clean = server_pubkey.strip_prefix("0x").unwrap_or(server_pubkey);
+                
+                println!("🔑 Server Public Key: {}", server_pubkey);
+                println!("🔑 Local Public Key:  0x{}", local_pubkey);
+                println!();
+                
+                if server_clean == local_pubkey {
+                    println!("✅ SUCCESS - API key is valid!");
+                    println!("  Account Index: {}", client.account_index());
+                    println!("  API Key Index: {}", client.api_key_index());
+                } else {
+                    println!("❌ FAILED - Public key mismatch");
+                    println!("  The private key does not match the registered API key");
+                }
+            } else {
+                println!("⚠️  Response does not contain 'public_key' field");
+                println!("Response JSON: {}", json);
+            }
         }
-        Err(e) => {
-            println!("Primary check_api_key failed: {}", e);
-            println!("Retrying with tolerant parser...");
-
-            let url = format!(
-                "{}/api/v1/apiKey?account_index={}&api_key_index={}",
-                base_url, account_index, api_key_index
-            );
-
-            let response = reqwest::Client::new().get(&url).send().await?;
-            let status = response.status();
-            let body = response.text().await?;
-            let trimmed = body.trim();
-
-            if !status.is_success() {
-                println!("FAILED - HTTP status {}", status);
-                println!("Body: {}", trimmed);
-                return Ok(());
-            }
-
-            match serde_json::from_str::<Value>(trimmed) {
-                Ok(json) => {
-                    if let Some(server_pubkey) = json["public_key"].as_str() {
-                        let local_pubkey = hex::encode(client.key_manager().public_key_bytes());
-                        let server_clean = server_pubkey.strip_prefix("0x").unwrap_or(server_pubkey);
-                        if server_clean == local_pubkey {
-                            println!("SUCCESS - API key is valid (tolerant parse)");
-                            println!("  Account Index: {}", client.account_index());
-                            println!("  API Key Index: {}", client.api_key_index());
-                        } else {
-                            println!("FAILED - Pubkey mismatch");
-                            println!("  Server: {}", server_pubkey);
-                            println!("  Local : {}", local_pubkey);
-                        }
-                    } else {
-                        println!("FAILED - Missing public_key in response: {}", json);
-                    }
-                }
-                Err(parse_err) => {
-                    println!("WARN - Could not parse JSON ({}). Raw response: {}", parse_err, trimmed);
-                    println!("Treating HTTP {} as success for connectivity check.", status);
-                }
-            }
+        Err(parse_err) => {
+            println!("⚠️  Could not parse JSON response");
+            println!("Error: {}", parse_err);
+            println!("Raw response: {}", trimmed);
+            println!();
+            println!("Note: The API endpoint may have changed or requires different authentication");
         }
     }
 

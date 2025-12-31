@@ -283,7 +283,7 @@ The implementation is optimized for:
 - **Private Keys**: Never expose private keys in logs or error messages
 - **Nonces**: Always use cryptographically secure random nonces (`ScalarField::sample_crypto()`)
 - **Side Channels**: The implementation is designed to be constant-time where possible
-- **Audit Status**: This is a prototype port from lighter-go and requires security review before production use
+- **Audit Status**: Prototype implementation that requires security review before production use
 
 ## Documentation
 
@@ -300,5 +300,5 @@ at your option.
 
 ## Contributing
 
-This library is ported from the Lighter-Go of the [Lighter Protocol](https://github.com/elliottech/lighter-go) project. Feel free to contribute or request any changes.
+Contributions and issues are welcome.
 

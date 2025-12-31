@@ -84,8 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         price: 500000,
         is_ask: false,
         order_type: 4, // TAKE_PROFIT
-        time_in_force: 1, // GOOD_TILL_TIME
-        reduce_only: false,
+        time_in_force: 0, // IOC (Immediate or Cancel) - required for trigger orders
+        reduce_only: true,
         trigger_price: 500000,
     };
 
@@ -114,8 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         price: 500000,
         is_ask: false,
         order_type: 2, // STOP_LOSS
-        time_in_force: 1, // GOOD_TILL_TIME
-        reduce_only: false,
+        time_in_force: 0, // IOC (Immediate or Cancel) - required for trigger orders
+        reduce_only: true,
         trigger_price: 500000,
     };
 
@@ -144,8 +144,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         price: 500000,
         is_ask: false,
         order_type: 5, // TAKE_PROFIT_LIMIT
-        time_in_force: 1, // GOOD_TILL_TIME
-        reduce_only: false,
+        time_in_force: 0, // IOC (Immediate or Cancel) - required for trigger orders
+        reduce_only: true,
         trigger_price: 500000,
     };
 
@@ -174,8 +174,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         price: 500000,
         is_ask: false,
         order_type: 3, // STOP_LOSS_LIMIT
-        time_in_force: 1, // GOOD_TILL_TIME
-        reduce_only: false,
+        time_in_force: 0, // IOC (Immediate or Cancel) - required for trigger orders
+        reduce_only: true,
         trigger_price: 500000,
     };
 

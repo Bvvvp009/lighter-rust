@@ -551,10 +551,15 @@ impl LighterClient {
         // Use 10 minutes - 1 second (599,000 ms) as default
         let expired_at = now + 599_000 + expired_at_skew; // 10 minutes - 1 second
         
-        // OrderExpiry: For limit orders with GoodTillTime, set to 28 days
-        // For other orders, use 0 (nil)
-        let order_expiry = if order.time_in_force == 1 && order.order_type == 0 {
-            // GoodTillTime limit order: 28 days expiry
+        // OrderExpiry: Set expiry for orders that need it
+        // - Limit orders with GoodTillTime (time_in_force=1, order_type=0): 28 days
+        // - Trigger orders (stop-loss, take-profit types 2,3,4,5): 28 days
+        // - Market/IOC orders: 0 (nil)
+        let is_trigger_order = matches!(order.order_type, 2 | 3 | 4 | 5);
+        let is_limit_gtt = order.time_in_force == 1 && order.order_type == 0;
+        
+        let order_expiry = if is_limit_gtt || is_trigger_order {
+            // 28 days expiry
             now + (28 * 24 * 60 * 60 * 1000)
         } else {
             0 // NilOrderExpiry

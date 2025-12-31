@@ -13,8 +13,6 @@ Cargo.lock
 
 # Environment variables and secrets
 .env
-.env.*
-!.env.example
 .env.test
 .env.local
 .env.production

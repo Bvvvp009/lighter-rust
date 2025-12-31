@@ -8,6 +8,9 @@ target/
 *.so
 *.dylib
 
+# Cargo lock files (for libraries)
+Cargo.lock
+
 # Environment variables and secrets
 .env
 .env.*
@@ -43,6 +46,36 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+.env
+venv/
+ENV/
+
 # Debug and test artifacts
 *.exe
 *.dll
@@ -52,15 +85,27 @@ yarn-error.log*
 *.trace
 trace_output.txt
 
+# Benchmark and report outputs
+/benchmarks/results/
+/benchmarks/target/
+benchmarks_report.md
+*.html
+tarpaulin-report.html
 
- legacy/
- legacy/*
+# Scripts for testing (utility scripts)
+scripts/analyze_retry_telemetry.py
+scripts/monitor_retries.py
+scripts/generate_auth_token_vectors.ps1
+scripts/generate_auth_token_vectors.sh
 
-# Documentation build outputs (if using mdbook or similar)
+# Legacy and temporary
+legacy/
+legacy/*
+
+# Documentation build outputs
 /book/
 
 # Coverage reports
-tarpaulin-report.html
 coverage/
 *.lcov
 
@@ -69,6 +114,10 @@ coverage/
 *.backup
 *~
 
-#wasm
+# WASM build artifacts
 *signer-wasm/
 *wasm-nodejs/
+
+# Go artifacts
+go.mod
+go.sum

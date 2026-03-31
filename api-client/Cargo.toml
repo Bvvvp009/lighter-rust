@@ -20,6 +20,7 @@ log = "0.4"
 env_logger = "0.11"
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 futures = "0.3"
+urlencoding = "2"
 
 [[example]]
 name = "create_market_order"
@@ -91,3 +92,7 @@ path = "examples/read-only/generate_token.rs"
 [[example]]
 name = "websocket_stream"
 path = "examples/websocket_stream.rs"
+
+[[example]]
+name = "benchmark_1h_tps"
+path = "examples/benchmark_1h_tps.rs"

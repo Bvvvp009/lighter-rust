@@ -1,4 +1,3 @@
-use api_client::LighterClient;
 use signer::KeyManager;
 use std::env;
 
@@ -14,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = env::var("BASE_URL")?;
     let account_index: i64 = env::var("ACCOUNT_INDEX")?.parse()?;
     let api_key_index: u8 = env::var("API_KEY_INDEX")?.parse()?;
-    let api_key = env::var("API_PRIVATE_KEY")?;
+    let _api_key = env::var("API_PRIVATE_KEY")?;
 
     println!("📋 Configuration:");
     println!("  Base URL: {}", base_url);

@@ -1,5 +1,6 @@
 use crate::{CryptoError, Result, Goldilocks, Fp5Element, ScalarField};
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Error, Debug)]
 pub enum SchnorrError {
@@ -52,7 +53,12 @@ const GENERATOR_ECG_FP5_POINT: Point = Point {
     ])
 };
 
-#[derive(Debug, Clone)]
+/// Schnorr scalar (256-bit, 4-limb) used inside signing operations.
+///
+/// Implements `ZeroizeOnDrop`: the raw limbs are overwritten with zeros when the
+/// value is dropped, preventing secret nonces and private-key scalars from
+/// lingering in heap/stack memory.
+#[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct Scalar([u64; 4]);
 
 impl Scalar {
@@ -247,7 +253,7 @@ impl AffinePoint {
 /// # Example
 ///
 /// ```rust
-/// use crypto::{Point, ScalarField};
+/// use goldilocks_crypto::{Point, ScalarField};
 ///
 /// // Get the generator point
 /// let generator = Point::generator();
@@ -271,6 +277,20 @@ pub struct Point {
     /// T coordinate in projective form
     pub t: Fp5Element,
 }
+
+/// Two `Point` values are equal when they represent the same affine point.
+///
+/// Equality is tested projectively:
+/// - `X₁/Z₁ == X₂/Z₂`  ⟺  `X₁·Z₂ == X₂·Z₁`
+/// - `U₁/T₁ == U₂/T₂`  ⟺  `U₁·T₂ == U₂·T₁`
+impl PartialEq for Point {
+    fn eq(&self, other: &Self) -> bool {
+        let x_eq = self.x.mul(&other.z) == other.x.mul(&self.z);
+        let u_eq = self.u.mul(&other.t) == other.u.mul(&self.t);
+        x_eq && u_eq
+    }
+}
+impl Eq for Point {}
 
 impl Point {
     /// Creates a new point from projective coordinates.
@@ -364,12 +384,12 @@ impl Point {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::{Point, ScalarField};
+    /// use goldilocks_crypto::{Point, ScalarField};
     ///
     /// let generator = Point::generator();
-    /// let public_key = generator.mul(&some_scalar);
     /// let s = ScalarField::sample_crypto();
     /// let e = ScalarField::sample_crypto();
+    /// let public_key = generator.mul(&s);
     /// let result = Point::mul_add2(&generator, &public_key, &s, &e);
     /// ```
     pub fn mul_add2(a: &Point, b: &Point, scalar_a: &ScalarField, scalar_b: &ScalarField) -> Point {
@@ -479,7 +499,7 @@ impl Point {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::{Point, ScalarField};
+    /// use goldilocks_crypto::{Point, ScalarField};
     ///
     /// let generator = Point::generator();
     /// let scalar = ScalarField::sample_crypto();
@@ -832,20 +852,31 @@ impl Point {
 /// Helper function to convert message bytes to Fp5Element consistently.
 /// This ensures the same conversion is used in both signing and verification.
 ///
-/// Matches Go's FromCanonicalLittleEndianBytes behavior:
-/// - Message is 40 bytes (5 * 8 bytes)
-/// - Each 8-byte chunk is interpreted as little-endian u64
-/// - Converted to Goldilocks field elements and assembled into Fp5Element
+/// Matches Go's `FromCanonicalLittleEndianBytes` behaviour:
+/// - Message must be exactly 40 bytes (5 × 8 bytes).
+/// - Each 8-byte chunk is interpreted as a little-endian u64.
+/// - Every chunk **must** be a canonical Goldilocks element, i.e. < MODULUS.
+///   If any chunk is ≥ MODULUS the function returns
+///   `Err(CryptoError::NonCanonicalMessage { index, value })`.
+///
+/// # Security note
+/// Silently reducing non-canonical chunks would allow two distinct 40-byte
+/// messages to map to the same Fp5 element, breaking signature binding.
+/// Callers must ensure each 8-byte chunk is in `[0, MODULUS)`.
 pub(crate) fn message_to_fp5(message: &[u8]) -> Result<Fp5Element> {
     if message.len() != 40 {
         return Err(CryptoError::InvalidMessageLength(message.len()));
     }
-    
+
     let mut message_elements = [Goldilocks::zero(); 5];
     for (i, chunk) in message.chunks(8).enumerate().take(5) {
         let mut bytes = [0u8; 8];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        message_elements[i] = Goldilocks::from_canonical_u64(u64::from_le_bytes(bytes));
+        let val = u64::from_le_bytes(bytes);
+        if val >= Goldilocks::MODULUS {
+            return Err(CryptoError::NonCanonicalMessage { index: i, value: val });
+        }
+        message_elements[i] = Goldilocks::from_canonical_u64(val);
     }
     Ok(Fp5Element(message_elements))
 }
@@ -882,9 +913,15 @@ pub fn validate_public_key(public_key: &[u8]) -> Result<()> {
         .map_err(|_| CryptoError::InvalidPrivateKeyLength(public_key.len()))?;
     
     // Try to decode as a point - if this fails, the public key is invalid
-    Point::decode(&public_key_fp5)
+    let point = Point::decode(&public_key_fp5)
         .ok_or(CryptoError::InvalidPublicKey)?;
-    
+
+    // Reject the neutral (identity) point — using it as a public key allows
+    // trivial forgeries since any signature would verify.
+    if point.is_neutral() {
+        return Err(CryptoError::InvalidPublicKey);
+    }
+
     Ok(())
 }
 
@@ -1068,11 +1105,11 @@ pub fn sign_hashed_message(private_key: &[u8], hashed_message_fp5: &[u8], nonce_
 /// # Example
 ///
 /// ```rust
-/// use crypto::{sign_with_nonce, verify_signature, ScalarField};
+/// use goldilocks_crypto::{sign_with_nonce, verify_signature, ScalarField, Point};
 ///
 /// let private_key = ScalarField::sample_crypto();
 /// let private_key_bytes = private_key.to_bytes_le();
-/// let public_key_bytes = private_key_bytes; // Simplified for example
+/// let public_key_bytes = Point::generator().mul(&private_key).encode().to_bytes_le();
 ///
 /// let message = [0u8; 40];
 /// let nonce = ScalarField::sample_crypto();
@@ -1080,6 +1117,7 @@ pub fn sign_hashed_message(private_key: &[u8], hashed_message_fp5: &[u8], nonce_
 ///
 /// let signature = sign_with_nonce(&private_key_bytes, &message, &nonce_bytes).unwrap();
 /// let is_valid = verify_signature(&signature, &message, &public_key_bytes).unwrap();
+/// assert!(is_valid);
 /// ```
 pub fn verify_signature(signature: &[u8], message: &[u8], public_key: &[u8]) -> Result<bool> {
     if signature.len() != 80 {

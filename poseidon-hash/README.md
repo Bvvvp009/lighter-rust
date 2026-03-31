@@ -1,250 +1,181 @@
-# Poseidon Hash (Goldilocks)
+# poseidon-hash
 
-Rust implementation of Poseidon2 hash function and Goldilocks field arithmetic.
+[![Crates.io](https://img.shields.io/crates/v/poseidon-hash.svg)](https://crates.io/crates/poseidon-hash)
+[![docs.rs](https://docs.rs/poseidon-hash/badge.svg)](https://docs.rs/poseidon-hash)
+[![License: MIT / Apache-2.0](https://img.shields.io/crates/l/poseidon-hash.svg)](LICENSE-MIT)
 
-## ✅ Verification Status
+> ### ⚠️ NOT SECURITY AUDITED
+> This library has **not** been independently security-audited. Do not use in
+> production without a professional cryptographic review. See [Security](#-security).
 
-**Internal Consistency:** ✅ VERIFIED - Byte-for-byte match against bundled vectors
+Rust implementation of **Goldilocks field arithmetic** and the **Poseidon2 hash
+function** — the ZK-proof-friendly primitives used by Plonky2 and the Lighter
+Protocol.
 
-- ✅ Hash outputs: Verified against bundled test vectors
-- ✅ Constants: EXTERNAL_CONSTANTS, INTERNAL_CONSTANTS, MATRIX_DIAG_12_U64 validated
-- ✅ Permutation: Structure validated against reference constants
-- ✅ Test vectors: Comprehensive test suite integrated
+---
 
-## ⚠️ Security Warning
+## What's Inside
 
-**This library has NOT been audited and is provided as-is. Use with caution.**
+| Item | Description |
+|------|-------------|
+| `Goldilocks` | 64-bit prime field `p = 2⁶⁴ − 2³² + 1`: `add`, `sub`, `mul`, `neg`, `inverse`, constant-time compare |
+| `Fp5Element` | Quintic extension field GF(p⁵): `add`, `sub`, `mul`, `square`, `inverse`, byte serialisation |
+| `poseidon2_hash` | Poseidon2 sponge, width 12 / rate 8, 4+4 full rounds, 22 partial rounds, S-box x⁷ |
+| `hash_to_quintic_extension` | Hash a `&[Goldilocks]` slice to a single `Fp5Element` (40 bytes) |
+| `merkle::MerkleTree` | Binary Merkle tree built from Poseidon2-hashed leaves |
 
-- Prototype implementation focused on correctness
-- **Not security audited** - do not use in production without proper security review
-- While the implementation matches internal test vectors, cryptographic software requires careful auditing
-- This is an open-source contribution and not an official Lighter Protocol library
-- Use at your own risk
+---
 
-## Features
+## ⚠️ Security
 
-- **Goldilocks Field Arithmetic**: Fast field operations with prime `p = 2^64 - 2^32 + 1`
-- **Poseidon2 Hash Function**: ZK-friendly hash function optimized for Zero-Knowledge proof systems
-- **Fp5 Quintic Extension Field**: 40-byte field elements for cryptographic operations
-- **Optimized Performance**: Efficient implementations for production use
-- **No Standard Library**: Can be used in `no_std` environments (with `alloc`)
+**This library has NOT been independently security-audited.**
 
-## Overview
+- **Do not deploy to production** without a professional cryptographic review.
+- Constants are cross-verified against [`elliottech/poseidon_crypto`](https://github.com/elliottech/poseidon_crypto/blob/main/hash/poseidon2_goldilocks/config.go)
+  and [Plonky3](https://github.com/Plonky3/Plonky3/blob/eeb4e37b/goldilocks/src/poseidon2.rs#L28),
+  but the Rust code itself has not been formally audited.
+- `#![forbid(unsafe_code)]` is set — no unsafe Rust is used.
+- This is an unofficial open-source port and is **not affiliated with or endorsed
+  by the Lighter Protocol team**.
+- Use at your own risk.
 
-This crate provides essential cryptographic primitives for Zero-Knowledge proof systems:
-
-- **Goldilocks Field**: A special prime field optimized for 64-bit CPU operations and ZK systems like Plonky2
-- **Poseidon2**: A hash function designed specifically for ZK circuits with low constraint counts
-- **Fp5 Extension Field**: Quintic extension field (GF(p^5)) for elliptic curve operations
+---
 
 ## Installation
-
-Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 poseidon-hash = "0.1"
 ```
 
-Or use the latest version from git (until published):
-
-```toml
-[dependencies]
-poseidon-hash = { git = "https://github.com/bvvvp009/lighter-rust", path = "rust-signer/poseidon-hash" }
-```
-
-## Usage
-
-### Basic Field Arithmetic
-
-```rust
-use poseidon_hash::Goldilocks;
-
-let a = Goldilocks::from(42);
-let b = Goldilocks::from(10);
-let sum = a.add(&b);
-let product = a.mul(&b);
-```
-
-### Poseidon2 Hashing
-
-```rust
-use poseidon_hash::{hash_to_quintic_extension, Goldilocks};
-
-let elements = vec![
-    Goldilocks::from(1),
-    Goldilocks::from(2),
-    Goldilocks::from(3),
-];
-let hash = hash_to_quintic_extension(&elements);
-```
-
-### Fp5 Extension Field
-
-```rust
-use poseidon_hash::Fp5Element;
-
-let a = Fp5Element::from_uint64_array([1, 2, 3, 4, 5]);
-let b = Fp5Element::one();
-let product = a.mul(&b);
-let bytes = product.to_bytes_le(); // Returns [u8; 40]
-```
-
-## Optional Features
-
-- **`serde`**: Enable serialization/deserialization support
+With optional serde support:
 
 ```toml
 [dependencies]
 poseidon-hash = { version = "0.1", features = ["serde"] }
 ```
 
-## Integration Guide
+---
 
-### Using in Your Project
+## Usage
 
-1. **Add the dependency** to your `Cargo.toml` (see Installation above)
-
-2. **Import the types** you need:
+### Goldilocks field arithmetic
 
 ```rust
-use poseidon_hash::{Goldilocks, Fp5Element, hash_to_quintic_extension};
-```
+use poseidon_hash::Goldilocks;
 
-3. **Use field arithmetic** for ZK circuit operations:
+let a = Goldilocks::from_canonical_u64(12);
+let b = Goldilocks::from_canonical_u64(5);
 
-```rust
-// Create field elements
-let a = Goldilocks::from_canonical_u64(42);
-let b = Goldilocks::from_canonical_u64(10);
-
-// Perform operations
-let sum = a.add(&b);
+let sum     = a.add(&b);
 let product = a.mul(&b);
-let inverse = a.inverse();
+let inv_a   = a.inverse();
 
-// Check properties
-assert!(!a.is_zero());
-assert_eq!(Goldilocks::zero().is_zero(), true);
+assert!(a.mul(&inv_a) == Goldilocks::one());
 ```
 
-4. **Hash data** for ZK proofs:
+### Poseidon2 hash
 
 ```rust
-// Prepare input elements
+use poseidon_hash::{Goldilocks, hash_to_quintic_extension};
+
 let inputs = vec![
     Goldilocks::from_canonical_u64(1),
     Goldilocks::from_canonical_u64(2),
     Goldilocks::from_canonical_u64(3),
 ];
 
-// Hash to Fp5Element (40 bytes)
-let hash = hash_to_quintic_extension(&inputs);
-let hash_bytes = hash.to_bytes_le();
+let digest = hash_to_quintic_extension(&inputs);
+let bytes: [u8; 40] = digest.to_bytes_le();
 ```
 
-5. **Work with extension fields**:
+### Fp5 extension field
 
 ```rust
-// Create Fp5 elements
-let elem1 = Fp5Element::from_uint64_array([1, 2, 3, 4, 5]);
-let elem2 = Fp5Element::one();
+use poseidon_hash::Fp5Element;
 
-// Operations
-let sum = elem1.add(&elem2);
-let product = elem1.mul(&elem2);
-let square = elem1.square();
-let inverse = elem1.inverse();
+let a = Fp5Element::from_uint64_array([1, 2, 3, 4, 5]);
+let inv = a.inverse();
+assert!(a.mul(&inv) == Fp5Element::one());
 
-// Serialization
-let bytes = elem1.to_bytes_le(); // [u8; 40]
+// Serialise / deserialise
+let bytes: [u8; 40] = a.to_bytes_le();
+let recovered = Fp5Element::from_bytes_le(&bytes).unwrap();
+assert_eq!(a, recovered);
 ```
 
-### Common Patterns
+### Merkle tree
 
-**Merkle Tree Construction:**
 ```rust
-use poseidon_hash::{Goldilocks, hash_to_quintic_extension};
+use poseidon_hash::{
+    Goldilocks, hash_to_quintic_extension,
+    merkle::MerkleTree,
+};
 
-fn merkle_hash(left: &[u8; 40], right: &[u8; 40]) -> [u8; 40] {
-    // Convert bytes to Goldilocks elements
-    let left_elems: Vec<Goldilocks> = left.chunks(8)
-        .map(|chunk| {
-            let mut arr = [0u8; 8];
-            arr.copy_from_slice(chunk);
-            Goldilocks::from_canonical_u64(u64::from_le_bytes(arr))
-        })
-        .collect();
-    
-    let right_elems: Vec<Goldilocks> = right.chunks(8)
-        .map(|chunk| {
-            let mut arr = [0u8; 8];
-            arr.copy_from_slice(chunk);
-            Goldilocks::from_canonical_u64(u64::from_le_bytes(arr))
-        })
-        .collect();
-    
-    // Combine and hash
-    let combined: Vec<Goldilocks> = left_elems.into_iter()
-        .chain(right_elems.into_iter())
-        .collect();
-    
-    hash_to_quintic_extension(&combined).to_bytes_le()
-}
+let leaves: Vec<[u8; 40]> = (0u64..8)
+    .map(|i| hash_to_quintic_extension(&[Goldilocks::from_canonical_u64(i)]).to_bytes_le())
+    .collect();
+
+let tree  = MerkleTree::new(leaves);
+let root  = tree.root();
+let proof = tree.proof(3);
+assert!(tree.verify(&proof, &tree.leaf(3), 3));
 ```
 
-**Converting Integers to Field Elements:**
-```rust
-use poseidon_hash::Goldilocks;
+---
 
-// From u64
-let elem = Goldilocks::from_canonical_u64(12345);
+## Algorithm Parameters
 
-// From i64 (handles negatives)
-let neg_elem = Goldilocks::from_i64(-10);
+| Parameter | Value |
+|-----------|-------|
+| Field prime | `2⁶⁴ − 2³² + 1` |
+| Sponge width / rate | 12 / 8 |
+| Full rounds | 8 (4 + 4) |
+| Partial rounds | 22 |
+| S-box degree | 7 |
 
-// From u64 using From trait
-let elem: Goldilocks = 42u64.into();
+**Constant provenance**
+- `EXTERNAL_CONSTANTS`, `INTERNAL_CONSTANTS` —
+  [`elliottech/poseidon_crypto` → `hash/poseidon2_goldilocks/config.go`](https://github.com/elliottech/poseidon_crypto/blob/main/hash/poseidon2_goldilocks/config.go)
+- `MATRIX_DIAG_12_U64` —
+  [Plonky3 `goldilocks/src/poseidon2.rs#L28`](https://github.com/Plonky3/Plonky3/blob/eeb4e37b/goldilocks/src/poseidon2.rs#L28)
+
+---
+
+## Running Tests
+
+```bash
+cargo test -p poseidon-hash --all-targets
 ```
 
-## Use Cases
+Expected: **59 tests, 0 failures.**
 
-- Zero-Knowledge proof systems (Plonky2, STARKs)
-- Cryptographic research and protocol development
-- Blockchain protocols requiring ZK-friendly hashing
-- Merkle tree construction for ZK systems
-- Commitment schemes and hash-based signatures
-- Elliptic curve cryptography over extension fields
+---
 
-## Performance
+## Features
 
-The implementation is optimized for:
-- Fast modular reduction using Goldilocks prime properties
-- Efficient field arithmetic operations
-- Low memory allocations
-- Production-grade performance
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `serde` | no | `Serialize` / `Deserialize` for all public types |
 
-## Security Considerations
+---
 
-⚠️ **Important**: This library has NOT been security audited. Use with caution in production systems.
+## `no_std`
 
-- **Audit Status**: Prototype implementation that requires security review before production use
-- **Hash Function**: Poseidon2 is designed for ZK-proof systems but this implementation needs auditing
-- **Field Operations**: Ensure proper input validation and bounds checking in your application
+This crate is `no_std`-compatible when `alloc` is available. No feature flag
+needed — it works out of the box in embedded and WASM targets.
 
-## Documentation
-
-Full API documentation is available at [docs.rs](https://docs.rs/poseidon-hash).
+---
 
 ## License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT License](LICENSE-MIT)
 
 at your option.
 
 ## Contributing
 
-Contributions and issues are welcome.
+Issues and pull requests are welcome.

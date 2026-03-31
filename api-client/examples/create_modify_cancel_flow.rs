@@ -1,6 +1,5 @@
 use api_client::{LighterClient, CreateOrderRequest};
 use std::env;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,10 +22,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
-    let deadline = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs() as i64 + 300; // 5 minutes from now
-
     // STEP 1: CREATE ORDER
     println!("STEP 1 - CREATE LIMIT ORDER");
     println!("{}", "-".repeat(80));

@@ -1,6 +1,5 @@
 use api_client::{LighterClient, CreateOrderRequest};
 use std::env;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

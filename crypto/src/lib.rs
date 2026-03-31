@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! # Goldilocks Crypto
 //!
 //! Rust implementation of ECgFp5 elliptic curve and Schnorr signatures over the Goldilocks field.
@@ -56,14 +57,18 @@
 pub mod schnorr;
 pub mod scalar_field;
 pub mod batch_verify;
+pub mod signature;
+pub mod keypair;
 
 pub use scalar_field::ScalarField;
 
 pub use poseidon_hash::{Goldilocks, Fp5Element};
 
 // Re-export Schnorr functions
-pub use schnorr::{sign, verify_signature, validate_public_key, sign_hashed_message, Point};
+pub use schnorr::{sign, sign_with_nonce, verify_signature, validate_public_key, sign_hashed_message, Point, AffinePoint};
 pub use batch_verify::batch_verify;
+pub use signature::Signature;
+pub use keypair::KeyPair;
 // WeierstrassPoint will be added when needed - for now using Point::mul_add2 for verification
 pub type WeierstrassPoint = Point;
 
@@ -90,6 +95,11 @@ pub enum CryptoError {
     /// Hex decoding failed.
     #[error("Hex decode error: {0}")]
     HexDecode(#[from] hex::FromHexError),
+    /// A message 8-byte chunk represents a value ≥ the Goldilocks field modulus.
+    /// Messages must be formed from canonical Goldilocks field elements
+    /// (each 8-byte little-endian chunk must be in [0, 2¶⁴ − 2³² + 1)).
+    #[error("Non-canonical message: chunk {index} value 0x{value:016x} is >= Goldilocks modulus")]
+    NonCanonicalMessage { index: usize, value: u64 },
 }
 
 /// Result type for cryptographic operations.

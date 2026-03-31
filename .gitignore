@@ -8,6 +8,66 @@ target/
 *.so
 *.dylib
 
+# Cargo lock files (for libraries, committed by binaries)
+Cargo.lock
+
+# Unrelated workspace members — not part of this repo
+/signer/
+/api-client/
+/scripts/
+/docs/
+
+# Go module files (this repo is Rust-only)
+go.mod
+go.sum
+
+# Environment variables and secrets
+.env
+.env.test
+.env.local
+.env.production
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Debug and test artifacts
+*.out
+*.trace
+trace_output.txt
+
+# Benchmark outputs
+benchmarks_report.md
+*.html
+tarpaulin-report.html
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Backup files
+*.bak
+*.backup
+*~
+
+
 # Cargo lock files (for libraries)
 Cargo.lock
 

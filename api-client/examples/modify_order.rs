@@ -1,6 +1,5 @@
 use api_client::LighterClient;
 use std::env;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,14 +22,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     let client = LighterClient::new(base_url, &api_key, account_index, api_key_index)?;
-    let deadline = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs() as i64 + 300;
-
-    let deadline = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs() as i64 + 300;
-
     let order_index = 200u64; // The order index to modify (from create_modify_cancel_flow.rs example)
 
     println!("📝 Modifying order {}...", order_index);

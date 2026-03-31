@@ -5,7 +5,7 @@ The `crypto` crate provides cryptographic primitives including Schnorr signature
 ## Quick Start
 
 ```rust
-use crypto::{ScalarField, Point, sign_with_nonce, verify_signature};
+use goldilocks_crypto::{ScalarField, Point, sign_with_nonce, verify_signature};
 
 // Generate a random private key
 let private_key = ScalarField::sample_crypto();
@@ -40,7 +40,7 @@ This library implements:
 
 ```toml
 [dependencies]
-crypto = "0.1"
+goldilocks-crypto = "0.1"
 poseidon-hash = "0.1"  # Required dependency
 ```
 
@@ -48,7 +48,7 @@ Or from git:
 
 ```toml
 [dependencies]
-crypto = { git = "https://github.com/elliottech/lighter-rust", path = "rust-signer/crypto" }
+goldilocks-crypto = { git = "https://github.com/elliottech/lighter-rust", path = "rust-signer/crypto" }
 poseidon-hash = { git = "https://github.com/elliottech/lighter-rust", path = "rust-signer/poseidon-hash" }
 ```
 
@@ -57,7 +57,7 @@ poseidon-hash = { git = "https://github.com/elliottech/lighter-rust", path = "ru
 ### Schnorr Signatures
 
 ```rust
-use crypto::{ScalarField, Point, sign_with_nonce, verify_signature};
+use goldilocks_crypto::{ScalarField, Point, sign_with_nonce, verify_signature};
 
 // Generate a random scalar (private key)
 let private_key = ScalarField::sample_crypto();
@@ -81,7 +81,7 @@ assert!(is_valid);
 ### Scalar Field Operations
 
 ```rust
-use crypto::ScalarField;
+use goldilocks_crypto::ScalarField;
 
 // Generate a random scalar (cryptographically secure)
 let scalar = ScalarField::sample_crypto();
@@ -113,7 +113,7 @@ let bytes: [u8; 40] = scalar.to_bytes_le();
 ### Elliptic Curve Points
 
 ```rust
-use crypto::{Point, ScalarField};
+use goldilocks_crypto::{Point, ScalarField};
 
 // Get the generator point
 let generator = Point::generator();
@@ -164,7 +164,7 @@ Represents an element in the scalar field of the elliptic curve (320 bits, repre
 #### Creating Scalars
 
 ```rust
-use crypto::ScalarField;
+use goldilocks_crypto::ScalarField;
 
 // Random scalar (cryptographically secure)
 let scalar = ScalarField::sample_crypto();
@@ -178,7 +178,7 @@ let hex_str = "0".repeat(80);
 let scalar = ScalarField::from_hex(&hex_str).unwrap();
 
 // From Fp5Element
-use crypto::Fp5Element;
+use goldilocks_crypto::Fp5Element;
 let fp5 = Fp5Element::one();
 let scalar = ScalarField::from_fp5_element(&fp5);
 
@@ -230,7 +230,7 @@ Represents a point on the ECgFp5 elliptic curve in projective coordinates (x, z,
 #### Creating Points
 
 ```rust
-use crypto::{Point, ScalarField, Fp5Element};
+use goldilocks_crypto::{Point, ScalarField, Fp5Element};
 
 // Generator point (base point)
 let generator = Point::generator();
@@ -257,7 +257,7 @@ let point = Point::decode(&encoded);
 #### Operations
 
 ```rust
-use crypto::{Point, ScalarField};
+use goldilocks_crypto::{Point, ScalarField};
 
 let generator = Point::generator();
 let scalar = ScalarField::sample_crypto();
@@ -274,7 +274,7 @@ let sum = p1.add(&p2);
 let doubled = p1.double();
 
 // Add affine point
-use crypto::AffinePoint;
+use goldilocks_crypto::AffinePoint;
 let affine = AffinePoint::neutral();
 let result = p1.add_affine(&affine);
 
@@ -291,7 +291,7 @@ let are_equal = point1.equals(&point2);
 #### Conversion
 
 ```rust
-use crypto::{Point, Fp5Element};
+use goldilocks_crypto::{Point, Fp5Element};
 
 let point = Point::generator();
 
@@ -313,7 +313,7 @@ The library provides two main functions for Schnorr signatures:
 #### Signing
 
 ```rust
-use crypto::{ScalarField, sign_with_nonce};
+use goldilocks_crypto::{ScalarField, sign_with_nonce};
 
 let private_key = ScalarField::sample_crypto();
 let private_key_bytes = private_key.to_bytes_le();
@@ -331,7 +331,7 @@ let signature = sign_with_nonce(&private_key_bytes, &message, &nonce_bytes).unwr
 #### Verification
 
 ```rust
-use crypto::{ScalarField, Point, verify_signature};
+use goldilocks_crypto::{ScalarField, Point, verify_signature};
 
 let private_key = ScalarField::sample_crypto();
 let private_key_bytes = private_key.to_bytes_le();
@@ -360,7 +360,7 @@ Signatures are 80 bytes total:
 For efficient batch operations, use `AffinePoint`:
 
 ```rust
-use crypto::{Point, AffinePoint};
+use goldilocks_crypto::{Point, AffinePoint};
 
 let point = Point::generator();
 
@@ -380,7 +380,7 @@ let affine_points = Point::batch_to_affine(&points);
 The library exports curve constants for advanced use:
 
 ```rust
-use crypto::schnorr::{B_ECG_FP5_POINT, B_MUL2_ECG_FP5_POINT, B_MUL4_ECG_FP5_POINT, B_MUL16_ECG_FP5_POINT};
+use goldilocks_crypto::schnorr::{B_ECG_FP5_POINT, B_MUL2_ECG_FP5_POINT, B_MUL4_ECG_FP5_POINT, B_MUL16_ECG_FP5_POINT};
 
 // These are precomputed multiples of the curve parameter B
 // Used internally for efficient point operations
@@ -389,7 +389,7 @@ use crypto::schnorr::{B_ECG_FP5_POINT, B_MUL2_ECG_FP5_POINT, B_MUL4_ECG_FP5_POIN
 ### Error Handling
 
 ```rust
-use crypto::{sign_with_nonce, CryptoError};
+use goldilocks_crypto::{sign_with_nonce, CryptoError};
 
 match sign_with_nonce(&private_key, &message, &nonce) {
     Ok(signature) => {
@@ -410,7 +410,7 @@ match sign_with_nonce(&private_key, &message, &nonce) {
 ## Error Handling
 
 ```rust
-use crypto::CryptoError;
+use goldilocks_crypto::CryptoError;
 
 // Most operations return Result types for error handling
 match Point::from_bytes(&invalid_bytes) {

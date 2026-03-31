@@ -1,5 +1,7 @@
 use std::fmt;
 use num_bigint::BigUint;
+use zeroize::Zeroize;
+use subtle::ConstantTimeEq;
 
 /// Scalar field element for the ECgFp5 curve.
 ///
@@ -7,10 +9,16 @@ use num_bigint::BigUint;
 /// The scalar field uses a 5-limb representation (320 bits total) for efficient
 /// arithmetic operations.
 ///
+/// # Security
+///
+/// Call `.zeroize()` (or wrap in a type that calls it on drop) to clear secret
+/// scalars from memory after use.  Equality comparisons use constant-time byte
+/// comparison via the `subtle` crate to prevent timing side-channels.
+///
 /// # Example
 ///
 /// ```rust
-/// use crypto::ScalarField;
+/// use goldilocks_crypto::ScalarField;
 ///
 /// // Generate a random scalar (cryptographically secure)
 /// let scalar = ScalarField::sample_crypto();
@@ -22,8 +30,17 @@ use num_bigint::BigUint;
 /// // Convert to bytes
 /// let bytes = scalar.to_bytes_le();
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Zeroize)]
 pub struct ScalarField(pub [u64; 5]);
+
+/// Constant-time equality: compares canonical byte representations.
+/// This prevents timing side-channels when comparing secret scalars.
+impl PartialEq for ScalarField {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_bytes_le().ct_eq(&other.to_bytes_le()).into()
+    }
+}
+impl Eq for ScalarField {}
 
 impl ScalarField {
     // Scalar field modulus constants
@@ -84,7 +101,8 @@ impl ScalarField {
     }
     
     pub fn is_zero(&self) -> bool {
-        self.0.iter().all(|&x| x == 0)
+        // Constant-time: compare all bytes simultaneously to avoid early-exit leaks.
+        bool::from(self.to_bytes_le().ct_eq(&[0u8; 40]))
     }
     
     pub fn equals(&self, rhs: &ScalarField) -> bool {
@@ -144,19 +162,17 @@ impl ScalarField {
         }
     }
     
-    /// Conditionally selects between two scalars.
+    /// Conditionally selects between two scalars in constant time.
     ///
     /// Returns `a1` if `c != 0`, otherwise returns `a0`.
-    /// This is a constant-time operation used for secure implementations.
-    /// Note: `c` should be either 0 or 0xFFFFFFFFFFFFFFFF (all bits set).
+    /// `c` must be either `0` or `0xFFFF_FFFF_FFFF_FFFF` (the value returned
+    /// by `sub_inner` as its borrow flag).  Using the mask directly — with no
+    /// branch — prevents the CPU from leaking the choice via the branch
+    /// predictor.
     pub fn select(c: u64, a0: &ScalarField, a1: &ScalarField) -> ScalarField {
-        // Use -c as a mask: if c != 0, -c will be all 1s; if c == 0, -c will be 0
-        // This works because in two's complement: -0 = 0, -0xFFFFFFFFFFFFFFFF = 1
-        // Actually, we need: if c == 0, mask = 0; if c != 0, mask = 0xFFFFFFFFFFFFFFFF
-        // The XOR trick: a0 ^ (mask & (a0 ^ a1))
-        // If mask = 0: a0 ^ 0 = a0
-        // If mask = 0xFFFFFFFFFFFFFFFF: a0 ^ (a0 ^ a1) = a1
-        let mask = if c == 0 { 0 } else { 0xFFFFFFFFFFFFFFFF };
+        // c is always 0 or 0xFFFF_FFFF_FFFF_FFFF coming from sub_inner;
+        // using it verbatim as the mask removes the conditional branch.
+        let mask = c;
         ScalarField([
             a0.0[0] ^ (mask & (a0.0[0] ^ a1.0[0])),
             a0.0[1] ^ (mask & (a0.0[1] ^ a1.0[1])),
@@ -171,7 +187,7 @@ impl ScalarField {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::ScalarField;
+    /// use goldilocks_crypto::ScalarField;
     ///
     /// let a = ScalarField::ONE;
     /// let b = ScalarField::TWO;
@@ -255,7 +271,7 @@ impl ScalarField {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::ScalarField;
+    /// use goldilocks_crypto::ScalarField;
     ///
     /// let a = ScalarField::TWO;
     /// let b = ScalarField::TWO;
@@ -317,7 +333,7 @@ impl ScalarField {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::ScalarField;
+    /// use goldilocks_crypto::ScalarField;
     ///
     /// let a = ScalarField::from_bytes_le(&[1; 40]).unwrap();
     /// let a_montgomery = a.monty_mul(&ScalarField::R2); // Convert to Montgomery form
@@ -330,7 +346,67 @@ impl ScalarField {
         // Note: ONE is in canonical form [1, 0, 0, 0, 0], which is correct for this conversion
         self.monty_mul(&Self::ONE)
     }
-    
+
+    /// Returns `true` if this scalar is in canonical form, i.e. its value is in `[0, N)`.
+    ///
+    /// All scalars produced by this crate's public API are always canonical.
+    /// Use this method to validate externally-supplied byte representations.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use goldilocks_crypto::ScalarField;
+    ///
+    /// assert!(ScalarField::ZERO.is_canonical());
+    /// assert!(ScalarField::ONE.is_canonical());
+    /// // N itself is not in [0, N)
+    /// assert!(!ScalarField::N.is_canonical());
+    /// ```
+    pub fn is_canonical(&self) -> bool {
+        // Compare limbs from most-significant (index 4) to least (index 0).
+        // Little-endian layout: limb[0] is the least significant 64-bit word.
+        for i in (0..5).rev() {
+            match self.0[i].cmp(&Self::N.0[i]) {
+                std::cmp::Ordering::Less    => return true,
+                std::cmp::Ordering::Greater => return false,
+                std::cmp::Ordering::Equal   => continue,
+            }
+        }
+        // All limbs equal → value == N → not in [0, N)
+        false
+    }
+
+    /// Computes the modular inverse of this scalar.
+    ///
+    /// Uses Fermat's little theorem: `a⁻¹ ≡ a^(N-2) mod N`.
+    /// Returns `None` if `self` is zero (zero has no inverse).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use goldilocks_crypto::ScalarField;
+    ///
+    /// let a = ScalarField::TWO;
+    /// let inv = a.inverse().unwrap();
+    /// let product = a.mul(&inv);
+    /// assert_eq!(product.to_bytes_le(), ScalarField::ONE.to_bytes_le());
+    /// ```
+    pub fn inverse(&self) -> Option<ScalarField> {
+        if self.is_zero() {
+            return None;
+        }
+        let self_bytes = self.to_bytes_le();
+        // Scalar field order N in big-endian hex (320 bits)
+        let order_bytes = hex::decode(
+            "7ffffffd800000077ffffff1000000167fffffe6cfb80639e8885c39d724a09ce80fd996948bffe1"
+        ).expect("invalid ORDER hex");
+        let order_big = BigUint::from_bytes_be(&order_bytes);
+        let self_big  = BigUint::from_bytes_le(&self_bytes);
+        let exp       = &order_big - BigUint::from(2u32);
+        let inv_big   = self_big.modpow(&exp, &order_big);
+        Some(ScalarField(Self::bigint_to_limbs(inv_big)))
+    }
+
     // Convert to little-endian bytes
     pub fn to_bytes_le(&self) -> [u8; 40] {
         let mut result = [0u8; 40];
@@ -356,6 +432,49 @@ impl ScalarField {
             value[i] = u64::from_le_bytes(bytes);
         }
         Ok(ScalarField(value))
+    }
+
+    /// Parses a scalar from a hex string (80 hex chars = 40 bytes, little-endian).
+    ///
+    /// Accepts both plain `"deadbeef..."` and `"0x"`-prefixed strings.
+    ///
+    /// # Errors
+    /// Returns `Err` if the string is not valid hex or not exactly 80 hex characters.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use goldilocks_crypto::ScalarField;
+    ///
+    /// let hex = "0".repeat(80);
+    /// let scalar = ScalarField::from_hex(&hex).unwrap();
+    /// ```
+    pub fn from_hex(hex_str: &str) -> Result<Self, String> {
+        let hex_str = hex_str.strip_prefix("0x").unwrap_or(hex_str);
+        if hex_str.len() != 80 {
+            return Err(format!(
+                "ScalarField hex must be exactly 80 hex chars (40 bytes), got {}",
+                hex_str.len()
+            ));
+        }
+        let bytes = hex::decode(hex_str)
+            .map_err(|e| format!("hex decode error: {e}"))?;
+        Self::from_bytes_le(&bytes)
+    }
+
+    /// Encodes this scalar as a 80-character lowercase hex string (little-endian bytes).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use goldilocks_crypto::ScalarField;
+    ///
+    /// let scalar = ScalarField::sample_crypto();
+    /// let hex = scalar.to_hex();
+    /// assert_eq!(hex.len(), 80);
+    /// ```
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.to_bytes_le())
     }
     
     /// Converts an Fp5Element to a ScalarField.
@@ -501,7 +620,7 @@ impl ScalarField {
     /// # Example
     ///
     /// ```rust
-    /// use crypto::ScalarField;
+    /// use goldilocks_crypto::ScalarField;
     ///
     /// let private_key = ScalarField::sample_crypto();
     /// ```
@@ -536,6 +655,54 @@ impl ScalarField {
         }
     }
     
+    /// Derives a canonical scalar deterministically from arbitrary seed bytes.
+    ///
+    /// The seed is processed as follows:
+    /// 1. Seed bytes are chunked into 8-byte windows (zero-padded to a multiple of 8).
+    /// 2. Each chunk is reduced to a canonical Goldilocks element.
+    /// 3. Poseidon2 hashes the elements to a single `Fp5Element` (40 bytes).
+    /// 4. The `Fp5Element` is reduced modulo the scalar field order `N`.
+    ///
+    /// The same seed always produces the same scalar.  Different seeds (even
+    /// differing by one bit) produce independent-looking scalars.
+    ///
+    /// # Security note
+    /// This is a deterministic KDF, **not** a password-based KDF.  Use a
+    /// high-entropy seed (32+ random bytes) or an HKDF/PBKDF2 output.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use goldilocks_crypto::ScalarField;
+    ///
+    /// let sk = ScalarField::from_seed_bytes(b"my 32-byte secret seed material!");
+    /// assert!(sk.is_canonical());
+    /// ```
+    pub fn from_seed_bytes(seed: &[u8]) -> Self {
+        use poseidon_hash::{Goldilocks, hash_to_quintic_extension};
+
+        // Pad seed to a multiple of 8 bytes.
+        let mut padded = seed.to_vec();
+        while padded.len() % 8 != 0 {
+            padded.push(0);
+        }
+
+        // Convert each 8-byte chunk to a canonical Goldilocks element.
+        let elements: Vec<Goldilocks> = padded
+            .chunks(8)
+            .map(|chunk| {
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(chunk);
+                // from_noncanonical_u64 reduces any u64 mod MODULUS in one step.
+                Goldilocks::from_noncanonical_u64(u64::from_le_bytes(arr))
+            })
+            .collect();
+
+        // Hash to Fp5 and reduce mod N to get the scalar.
+        let fp5 = hash_to_quintic_extension(&elements);
+        Self::from_fp5_element(&fp5)
+    }
+
     // Convert big int to 5-limb array (little endian)
     fn bigint_to_limbs(value: BigUint) -> [u64; 5] {
         let bytes = value.to_bytes_le();

@@ -1,10 +1,145 @@
-# Lighter Rust SDK
+# goldilocks-poseidon2
 
-A high-performance Rust implementation of the Lighter Protocol signer, providing cryptographic primitives for the Lighter Exchange.
+> ### ⚠️ NOT SECURITY AUDITED
+> This software has **not** been independently security-audited. Do not use in
+> production without a professional cryptographic review. See [Security](#-security).
 
-## 🚀 Features
+Rust implementation of **Poseidon2 hash** and **ECgFp5 Schnorr signatures** over
+the Goldilocks prime field (`p = 2⁶⁴ − 2³² + 1`).
 
-- **High-Performance Signing**: Optimized Schnorr signature generation using Goldilocks field arithmetic
+These are standalone cryptographic primitives ported from the
+[Lighter Protocol](https://lighter.xyz) Go implementation
+([`elliottech/poseidon_crypto`](https://github.com/elliottech/poseidon_crypto)).
+Round constants are cross-verified against that reference and against
+[Plonky3](https://github.com/Plonky3/Plonky3).
+
+---
+
+## Crates
+
+| Crate | Folder | Description |
+|-------|--------|-------------|
+| [`poseidon-hash`](./poseidon-hash) | `poseidon-hash/` | Goldilocks field arithmetic, Poseidon2 permutation, Fp5 quintic extension, Merkle tree |
+| [`goldilocks-crypto`](./crypto) | `crypto/` | ECgFp5 elliptic curve, Schnorr key generation, signing, and batch verification |
+
+---
+
+## Quick Start
+
+```toml
+# Cargo.toml
+[dependencies]
+poseidon-hash     = "0.1"
+goldilocks-crypto = "0.1"
+```
+
+### Hash with Poseidon2
+
+```rust
+use poseidon_hash::{Goldilocks, hash_to_quintic_extension};
+
+let input = vec![
+    Goldilocks::from_canonical_u64(1),
+    Goldilocks::from_canonical_u64(2),
+];
+let digest = hash_to_quintic_extension(&input);
+let bytes: [u8; 40] = digest.to_bytes_le();
+```
+
+### Sign and verify a message
+
+```rust
+use goldilocks_crypto::{KeyPair, Signature};
+
+let kp  = KeyPair::generate();
+let msg = [0u8; 40]; // 40-byte message (Fp5 digest)
+
+let sig: Signature = kp.sign(&msg).unwrap();
+sig.verify(&msg, &kp.public_key_bytes()).unwrap();
+```
+
+---
+
+## Running Tests
+
+```bash
+cargo test --workspace --all-targets
+```
+
+Expected: **143 tests, 0 failures.**
+
+| Suite | Count |
+|-------|-------|
+| `poseidon-hash` unit tests | 59 |
+| `goldilocks-crypto` unit tests | 21 |
+| `goldilocks-crypto` integration | 2 |
+| `goldilocks-crypto` security | 61 |
+
+---
+
+## Algorithm Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Field prime | `p = 2⁶⁴ − 2³² + 1` (Goldilocks) |
+| Hash function | Poseidon2 |
+| Sponge width / rate | 12 / 8 |
+| Full rounds | 8 (4 + 4) |
+| Partial rounds | 22 |
+| S-box degree | 7 |
+| Curve | ECgFp5 over GF(p⁵) |
+| Signature | Schnorr + Poseidon2 |
+
+**Constant provenance:**
+- `EXTERNAL_CONSTANTS`, `INTERNAL_CONSTANTS` —
+  [`elliottech/poseidon_crypto` → `hash/poseidon2_goldilocks/config.go`](https://github.com/elliottech/poseidon_crypto/blob/main/hash/poseidon2_goldilocks/config.go)
+- `MATRIX_DIAG_12_U64` —
+  [Plonky3 `goldilocks/src/poseidon2.rs#L28`](https://github.com/Plonky3/Plonky3/blob/eeb4e37b/goldilocks/src/poseidon2.rs#L28)
+
+---
+
+## ⚠️ Security
+
+**This software has NOT been independently security-audited.**
+
+- **Do not deploy to production** without a professional cryptographic review.
+- Correctness is verified via 143 unit/integration tests and cross-checked
+  against the Go reference implementation, but that is not a substitute for a
+  formal audit.
+- `#![forbid(unsafe_code)]` is set in both crates — no unsafe Rust is used.
+- Private keys are zeroized on drop via the
+  [`zeroize`](https://crates.io/crates/zeroize) crate, but side-channel
+  resistance has not been formally evaluated.
+- This is an unofficial open-source port and is **not affiliated with or
+  endorsed by the Lighter Protocol team**.
+- Use at your own risk.
+
+---
+
+## Repository Layout
+
+```
+poseidon-hash/      Goldilocks field + Poseidon2 + Fp5 + Merkle tree
+  src/lib.rs
+  CHANGELOG.md
+  README.md
+
+crypto/             ECgFp5 curve + Schnorr signatures
+  src/lib.rs
+  README.md
+```
+
+---
+
+## License
+
+Licensed under either of:
+
+- [Apache License, Version 2.0](./poseidon-hash/LICENSE-APACHE)
+- [MIT License](./poseidon-hash/LICENSE-MIT)
+
+at your option.
+
 - **Poseidon2 Hashing**: Efficient zero-knowledge proof-friendly hashing
 - **Thread-Safe**: `Send + Sync` for concurrent operations
 - **Production-Ready**: Battle-tested cryptographic primitives

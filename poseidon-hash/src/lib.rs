@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! # Poseidon Hash (Goldilocks)
 //!
 //! Rust implementation of Poseidon2 hash function and Goldilocks field arithmetic.
@@ -47,6 +48,8 @@
 //! let hash = hash_to_quintic_extension(&elements);
 //! ```
 
+use zeroize::Zeroize;
+
 /// Goldilocks field element.
 ///
 /// The Goldilocks field uses prime modulus p = 2^64 - 2^32 + 1, which is optimized for:
@@ -64,8 +67,20 @@
 /// let sum = a.add(&b);
 /// let product = a.mul(&b);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Zeroize)]
 pub struct Goldilocks(pub u64);
+
+/// Two Goldilocks elements are equal iff they represent the same field element,
+/// i.e., their *canonical* (reduced mod p) values are identical.
+/// This is necessary because arithmetic operations (especially `mul`) can produce
+/// non-canonical representations where the raw u64 exceeds the modulus.
+impl PartialEq for Goldilocks {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.to_canonical_u64() == other.to_canonical_u64()
+    }
+}
+impl Eq for Goldilocks {}
 
 impl Goldilocks {
     /// Field modulus: p = 2^64 - 2^32 + 1 = 0xffffffff00000001
@@ -197,15 +212,37 @@ impl Goldilocks {
     pub fn double(&self) -> Goldilocks {
         self.add(self)
     }
-    
+
+    /// Computes the additive inverse (negation) of this field element.
+    ///
+    /// Returns `0` for the zero element; otherwise returns `p - x` where `p` is the modulus.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use poseidon_hash::Goldilocks;
+    ///
+    /// let a = Goldilocks::from_canonical_u64(42);
+    /// let neg_a = a.neg();
+    /// assert!(neg_a.add(&a).is_zero(), "a + (-a) must be zero");
+    /// assert_eq!(neg_a.neg().to_canonical_u64(), a.to_canonical_u64(), "-(-a) must equal a");
+    /// ```
+    pub fn neg(&self) -> Goldilocks {
+        let x = self.to_canonical_u64();
+        if x == 0 {
+            Goldilocks::zero()
+        } else {
+            Goldilocks(Self::MODULUS - x)
+        }
+    }
+
     /// Computes the multiplicative inverse of this field element.
     ///
-    /// Uses Fermat's little theorem: a^(-1) ≡ a^(p-2) mod p
+    /// Uses Fermat's little theorem: `a^(-1) ≡ a^(p-2) mod p`
     ///
-    /// # Panics
-    ///
-    /// This function will panic if called on zero (which has no inverse).
-    /// Use `inverse_or_zero()` if you need to handle zero elements.
+    /// Returns `0` when called on the zero element (analogous to `inverse_or_zero()`).
+    /// Use the explicit check `if self.is_zero()` before calling when a zero input
+    /// indicates a logic error in your code.
     pub fn inverse(&self) -> Goldilocks {
         // Fermat's little theorem: a^(p-2) ≡ a^(-1) mod p
         // p = 2^64 - 2^32 + 1
@@ -227,8 +264,10 @@ impl Goldilocks {
     
     /// Creates a field element from a canonical u64 value.
     ///
-    /// The input value should be in the range [0, MODULUS). Values outside this range
-    /// will be automatically reduced by field operations.
+    /// The input value is unconditionally reduced modulo MODULUS, so values
+    /// in the range `[MODULUS, u64::MAX]` are accepted and normalised.
+    /// In debug builds an assertion fires for non-canonical inputs so callers
+    /// can catch unintended use early.
     ///
     /// # Example
     ///
@@ -236,9 +275,26 @@ impl Goldilocks {
     /// use poseidon_hash::Goldilocks;
     ///
     /// let a = Goldilocks::from_canonical_u64(42);
+    /// // Values above MODULUS are silently reduced.
+    /// let b = Goldilocks::from_canonical_u64(Goldilocks::MODULUS + 1);
+    /// assert_eq!(b.to_canonical_u64(), 1);
     /// ```
     pub fn from_canonical_u64(val: u64) -> Goldilocks {
-        Goldilocks(val)
+        debug_assert!(
+            val < Self::MODULUS,
+            "from_canonical_u64: value 0x{val:016x} exceeds MODULUS — did you mean from_noncanonical_u64?"
+        );
+        // Unconditional branchless reduction keeps the representation canonical
+        // in both debug and release builds.
+        Goldilocks(if val >= Self::MODULUS { val - Self::MODULUS } else { val })
+    }
+
+    /// Creates a field element from any u64 value, reducing modulo MODULUS.
+    ///
+    /// Use this when the input may legitimately exceed MODULUS (e.g. when
+    /// deserialising untrusted data or computing intermediate results).
+    pub fn from_noncanonical_u64(val: u64) -> Goldilocks {
+        Goldilocks(if val >= Self::MODULUS { val - Self::MODULUS } else { val })
     }
     
     /// Creates a field element from an i64 value.
@@ -395,6 +451,60 @@ impl From<u64> for Goldilocks {
     }
 }
 
+impl std::fmt::Display for Goldilocks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_canonical_u64())
+    }
+}
+
+impl Goldilocks {
+    /// Serialises this element as 8 little-endian bytes.
+    ///
+    /// The output always uses the *canonical* representation (value reduced mod MODULUS).
+    pub fn to_bytes_le(&self) -> [u8; 8] {
+        self.to_canonical_u64().to_le_bytes()
+    }
+
+    /// Deserialises a Goldilocks element from 8 little-endian bytes.
+    ///
+    /// Returns `Err` if `bytes` is not exactly 8 bytes long or if the decoded
+    /// u64 value is ≥ MODULUS (i.e. not a canonical field element).
+    pub fn from_bytes_le(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != 8 {
+            return Err(format!("expected 8 bytes, got {}", bytes.len()));
+        }
+        let mut arr = [0u8; 8];
+        arr.copy_from_slice(bytes);
+        let val = u64::from_le_bytes(arr);
+        if val >= Self::MODULUS {
+            return Err(format!(
+                "value 0x{val:016x} is not a canonical Goldilocks element (>= MODULUS)"
+            ));
+        }
+        Ok(Goldilocks(val))
+    }
+
+    /// Encodes this element as a 16-character lowercase hex string.
+    ///
+    /// The hex string always represents canonical (reduced) bytes, little-endian.
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.to_bytes_le())
+    }
+
+    /// Decodes a Goldilocks element from a 16-character hex string.
+    ///
+    /// Accepts an optional `0x` prefix.  Returns `Err` if the hex is malformed,
+    /// the wrong length, or the decoded value ≥ MODULUS.
+    pub fn from_hex(s: &str) -> Result<Self, String> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        if s.len() != 16 {
+            return Err(format!("expected 16 hex chars, got {}", s.len()));
+        }
+        let bytes = hex::decode(s).map_err(|e| format!("hex decode: {e}"))?;
+        Self::from_bytes_le(&bytes)
+    }
+}
+
 #[allow(dead_code)]
 fn reduce_u128(x: u128) -> u64 {
     let low = x as u64;
@@ -428,8 +538,25 @@ fn reduce_u128(x: u128) -> u64 {
 /// let b = Fp5Element::one();
 /// let product = a.mul(&b);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub struct Fp5Element(pub [Goldilocks; 5]);
+
+/// Two Fp5 elements are equal iff all five coefficients are equal as field elements
+/// (uses canonical Goldilocks comparison).
+impl PartialEq for Fp5Element {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.iter().zip(other.0.iter()).all(|(a, b)| a == b)
+    }
+}
+impl Eq for Fp5Element {}
+
+impl Zeroize for Fp5Element {
+    fn zeroize(&mut self) {
+        for limb in &mut self.0 {
+            limb.zeroize();
+        }
+    }
+}
 
 impl Fp5Element {
     /// Returns the zero element of the extension field.
@@ -895,7 +1022,8 @@ const RATE: usize = 8;
 const ROUNDS_F_HALF: usize = 4;
 const ROUNDS_P: usize = 22;
 
-// External round constants (8 rounds total)
+// External round constants (8 rounds × 12 elements).
+// Source: poseidon_crypto/hash/poseidon2_goldilocks/config.go (elliottech/poseidon_crypto)
 const EXTERNAL_CONSTANTS: [[u64; WIDTH]; 8] = [
     [
         15492826721047263190, 11728330187201910315, 8836021247773420868, 16777404051263952451,
@@ -939,7 +1067,8 @@ const EXTERNAL_CONSTANTS: [[u64; WIDTH]; 8] = [
     ],
 ];
 
-// Internal round constants (22 partial rounds)
+// Internal round constants (22 partial rounds).
+// Source: poseidon_crypto/hash/poseidon2_goldilocks/config.go (elliottech/poseidon_crypto)
 const INTERNAL_CONSTANTS: [u64; ROUNDS_P] = [
     11921381764981422944, 10318423381711320787, 8291411502347000766, 229948027109387563,
     9152521390190983261, 7129306032690285515, 15395989607365232011, 8641397269074305925,
@@ -949,7 +1078,8 @@ const INTERNAL_CONSTANTS: [u64; ROUNDS_P] = [
     14047056970978379368, 838728605080212101,
 ];
 
-// Matrix diagonal constants for Poseidon2
+// Matrix diagonal constants for Poseidon2.
+// Source: Plonky3 — https://github.com/Plonky3/Plonky3/blob/eeb4e37b/goldilocks/src/poseidon2.rs#L28
 const MATRIX_DIAG_12_U64: [u64; WIDTH] = [
     0xc3b6c08e23ba9300, 0xd84b5de94a324fb6, 0x0d0c371c5b35b84f, 0x7964f570e7188037,
     0x5daf18bbd996604b, 0x6743bc47b9595257, 0x5528b9362c59bb70, 0xac45e25b7127b68b,
@@ -1009,7 +1139,54 @@ fn hash_n_to_m_no_pad(input: &[Goldilocks], num_outputs: usize) -> Fp5Element {
 /// Equivalent to Go's HashOut type
 pub type HashOut = [Goldilocks; 4];
 
-/// Hashes input elements without padding, producing exactly 4 output elements.
+/// Serialises a `HashOut` to 32 little-endian bytes.
+///
+/// Each of the 4 Goldilocks elements contributes 8 bytes in canonical (reduced) form.
+///
+/// # Example
+///
+/// ```rust
+/// use poseidon_hash::{Goldilocks, hash_no_pad, hash_out_to_bytes_le};
+///
+/// let h = hash_no_pad(&[Goldilocks::from_canonical_u64(1)]);
+/// let bytes = hash_out_to_bytes_le(h);
+/// assert_eq!(bytes.len(), 32);
+/// ```
+pub fn hash_out_to_bytes_le(h: HashOut) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for (i, elem) in h.iter().enumerate() {
+        out[i * 8..(i + 1) * 8].copy_from_slice(&elem.to_bytes_le());
+    }
+    out
+}
+
+/// Deserialises a `HashOut` from 32 little-endian bytes.
+///
+/// Returns `Err` if `bytes` is not exactly 32 bytes or if any 8-byte chunk
+/// encodes a non-canonical Goldilocks element (value >= MODULUS).
+///
+/// # Example
+///
+/// ```rust
+/// use poseidon_hash::{Goldilocks, hash_no_pad, hash_out_to_bytes_le, hash_out_from_bytes_le};
+///
+/// let original = hash_no_pad(&[Goldilocks::from_canonical_u64(42)]);
+/// let bytes = hash_out_to_bytes_le(original);
+/// let restored = hash_out_from_bytes_le(&bytes).unwrap();
+/// assert_eq!(original, restored);
+/// ```
+pub fn hash_out_from_bytes_le(bytes: &[u8]) -> Result<HashOut, String> {
+    if bytes.len() != 32 {
+        return Err(format!("expected 32 bytes, got {}", bytes.len()));
+    }
+    let mut out = [Goldilocks::zero(); 4];
+    for i in 0..4 {
+        out[i] = Goldilocks::from_bytes_le(&bytes[i * 8..(i + 1) * 8])?;
+    }
+    Ok(out)
+}
+
+/// Hashes a slice of Goldilocks field elements, producing exactly 4 output elements.
 /// Equivalent to Go's HashNoPad function.
 /// 
 /// # Arguments
@@ -1212,3 +1389,11 @@ fn sbox_p(index: usize, state: &mut [Goldilocks; WIDTH]) {
     let tmp_sixth = tmp_square.mul(&tmp).square();
     state[index] = tmp_sixth.mul(&tmp);
 }
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod poseidon2_tests;
+
+pub mod merkle;

@@ -13,3 +13,7 @@ thiserror = { workspace = true }
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 
+[dev-dependencies]
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+hex = { workspace = true }

@@ -1,6 +1,4 @@
 use api_client::CreateOrderRequest;
-use std::env;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", "=".repeat(80));
@@ -11,9 +9,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 This example shows the structure for grouped orders");
     println!();
 
-    let deadline = SystemTime::now()
-        .duration_since(UNIX_EPOCH)?
-        .as_secs() as i64 + 300;
     let account_index: i64 = 361816; // example value
 
     println!("📝 Creating grouped order structure with SL/TP...");

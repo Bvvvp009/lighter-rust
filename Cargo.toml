@@ -1,9 +1,9 @@
 [workspace]
 members = [
     "poseidon-hash",
-    "crypto", 
+    "crypto",
     "signer",
-    "api-client"
+    "api-client",
 ]
 resolver = "2"
 
@@ -14,4 +14,7 @@ hex = "0.4"
 thiserror = "1.0"
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1.0", features = ["full"] }
-
+dotenv = "0.15"
+rand = "0.8"
+log = "0.4"
+env_logger = "0.11"

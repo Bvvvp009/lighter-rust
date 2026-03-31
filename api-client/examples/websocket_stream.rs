@@ -78,7 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         println!("  Type: Error");
                                         println!("  Message: {}", err);
                                     }
-                                }
+                                        api_client::websocket::WsMessage::Trade(data) => {
+                                            println!("  Type: Trade");
+                                            println!("  Data: {}", serde_json::to_string_pretty(&data)?);
+                                        }
+                                        api_client::websocket::WsMessage::Unknown(data) => {
+                                            println!("  Type: Unknown");
+                                            println!("  Data: {}", serde_json::to_string_pretty(&data)?);
+                                        }
+                                    }
                                 println!();
                             }
                             None => {

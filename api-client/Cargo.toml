@@ -1,0 +1,105 @@
+[package]
+name = "api-client"
+version = "0.1.0"
+edition = "2021"
+authors = ["bvvvp009"]
+description = "Typed async REST and WebSocket client for the Lighter exchange"
+repository = "https://github.com/bvvvp009/lighter-rust"
+homepage = "https://github.com/bvvvp009/lighter-rust"
+readme = "README.md"
+keywords = ["lighter", "trading", "api-client", "websocket"]
+categories = ["api-bindings"]
+
+[dependencies]
+signer = { path = "../signer" }
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+thiserror = { workspace = true }
+hex = { workspace = true }
+base64 = "0.21"
+dotenv = "0.15"
+rand = "0.8"
+log = "0.4"
+env_logger = "0.11"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures = "0.3"
+urlencoding = "2"
+
+[[example]]
+name = "create_market_order"
+path = "examples/create_market_order.rs"
+
+[[example]]
+name = "create_limit_order"
+path = "examples/create_limit_order.rs"
+
+[[example]]
+name = "cancel_order"
+path = "examples/cancel_order.rs"
+
+[[example]]
+name = "cancel_all_orders"
+path = "examples/cancel_all_orders.rs"
+
+[[example]]
+name = "create_auth_token"
+path = "examples/create_auth_token.rs"
+
+[[example]]
+name = "setup_api_key"
+path = "examples/setup_api_key.rs"
+
+[[example]]
+name = "create_sl_tp"
+path = "examples/create_sl_tp.rs"
+
+[[example]]
+name = "transfer_update_leverage"
+path = "examples/transfer_update_leverage.rs"
+
+[[example]]
+name = "send_tx_batch"
+path = "examples/send_tx_batch.rs"
+
+# Spot trading examples
+[[example]]
+name = "spot_buy"
+path = "examples/spot/buy.rs"
+
+[[example]]
+name = "spot_sell"
+path = "examples/spot/sell.rs"
+
+[[example]]
+name = "spot_limit_order"
+path = "examples/spot/limit_order.rs"
+
+[[example]]
+name = "spot_cancel"
+path = "examples/spot/cancel.rs"
+
+# Read-only examples
+[[example]]
+name = "read_only_check_api_key"
+path = "examples/read-only/check_api_key.rs"
+
+[[example]]
+name = "read_only_get_nonce"
+path = "examples/read-only/get_nonce.rs"
+
+[[example]]
+name = "read_only_generate_token"
+path = "examples/read-only/generate_token.rs"
+
+# WebSocket example
+[[example]]
+name = "websocket_stream"
+path = "examples/websocket_stream.rs"
+
+[[example]]
+name = "benchmark_1h_tps"
+path = "examples/benchmark_1h_tps.rs"

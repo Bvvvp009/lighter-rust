@@ -1,0 +1,29 @@
+[package]
+name = "poseidon-hash"
+version = "0.1.4"
+edition = "2021"
+authors = ["bvvvp009"]
+license = "MIT OR Apache-2.0"
+description = "Rust implementation of Poseidon2 hash function and Goldilocks field arithmetic"
+repository = "https://github.com/bvvvp009/lighter-rust"
+homepage = "https://github.com/bvvvp009/lighter-rust"
+documentation = "https://docs.rs/poseidon-hash"
+keywords = ["poseidon", "poseidon2", "goldilocks", "hash", "cryptography"]
+categories = ["cryptography", "algorithms", "no-std"]
+readme = "README.md"
+
+[dependencies]
+# Optional serde support for serialization
+serde = { version = "1.0", features = ["derive"], optional = true }
+# Memory zeroing for sensitive field elements
+zeroize = { version = "1", features = ["derive"] }
+hex = "0.4"
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dev-dependencies]
+hex = "0.4"
+
+

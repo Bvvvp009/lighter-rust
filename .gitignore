@@ -1,0 +1,72 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock files (libraries do not commit lock files)
+Cargo.lock
+
+# Environment variables and secrets
+.env
+.env.test
+.env.local
+.env.production
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Debug and test artifacts
+*.out
+*.trace
+trace_output.txt
+
+# Benchmark and report outputs
+benchmarks_report.md
+tarpaulin-report.html
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Backup files
+*.bak
+*.backup
+
+# Documentation build outputs
+/book/
+
+# WASM build artifacts
+*signer-wasm/
+*wasm-nodejs/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+venv/
+ENV/

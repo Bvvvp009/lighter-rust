@@ -1,0 +1,21 @@
+[package]
+name = "poseidon-hash-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+poseidon-hash = { path = ".." }
+
+[[bin]]
+name = "decode_and_merkle"
+path = "fuzz_targets/decode_and_merkle.rs"
+test = false
+doc = false
+
+[workspace]
+members = ["."]

@@ -1,0 +1,34 @@
+[package]
+name = "lighter-sdk"
+version = "0.1.0"
+edition = "2021"
+authors = ["bvvvp009"]
+license = "MIT OR Apache-2.0"
+description = "Unified Rust SDK for Lighter with REST, WebSocket, signing, and cryptographic primitives"
+repository = "https://github.com/bvvvp009/lighter-rust"
+homepage = "https://github.com/bvvvp009/lighter-rust"
+readme = "README.md"
+keywords = ["lighter", "trading", "sdk", "crypto", "websocket"]
+categories = ["api-bindings", "cryptography"]
+
+[dependencies]
+api-client = { path = "../api-client", version = "0.1.0" }
+signer = { path = "../signer", version = "0.1.0" }
+goldilocks-crypto = { path = "../crypto", version = "0.1.1" }
+poseidon-hash = { path = "../poseidon-hash", version = "0.1.4" }
+
+[dev-dependencies]
+tokio = { workspace = true }
+dotenv = { workspace = true }
+
+[[example]]
+name = "mainnet_readonly_smoke"
+path = "examples/mainnet_readonly_smoke.rs"
+
+[[example]]
+name = "mainnet_validation_matrix"
+path = "examples/mainnet_validation_matrix.rs"
+
+[[example]]
+name = "mainnet_live_order_cycle"
+path = "examples/mainnet_live_order_cycle.rs"

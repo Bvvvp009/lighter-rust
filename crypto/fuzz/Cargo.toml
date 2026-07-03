@@ -1,0 +1,23 @@
+[package]
+name = "goldilocks-crypto-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hex = "0.4"
+goldilocks-crypto = { path = ".." }
+poseidon-hash = { path = "../../poseidon-hash" }
+
+[[bin]]
+name = "parse_and_verify"
+path = "fuzz_targets/parse_and_verify.rs"
+test = false
+doc = false
+
+[workspace]
+members = ["."]

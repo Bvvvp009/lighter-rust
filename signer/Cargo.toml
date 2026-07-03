@@ -1,0 +1,26 @@
+[package]
+name = "signer"
+version = "0.1.0"
+edition = "2021"
+authors = ["bvvvp009"]
+description = "Transaction signing, key management, and auth token generation for Lighter"
+repository = "https://github.com/bvvvp009/lighter-rust"
+homepage = "https://github.com/bvvvp009/lighter-rust"
+readme = "README.md"
+keywords = ["lighter", "signing", "auth", "crypto"]
+categories = ["cryptography"]
+
+[dependencies]
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+goldilocks-crypto = { path = "../crypto" }
+poseidon-hash = { path = "../poseidon-hash" }
+hex = { workspace = true }
